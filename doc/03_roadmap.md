@@ -34,12 +34,12 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 2 — User layer (MVP)
 
-- [ ] `registry` parser: three whitespace-separated columns, skip blank lines and `#` comments
-- [ ] `aliprehook_run <cmd_name>`: look up `(key, cmd)` → run hook; non-zero exit aborts
-- [ ] `aliprehook_define <name> <command...>`: creates the wrapper function from 01
-- [ ] `hooks/example_echo.sh` (safe: prints that aliprehook ran, key, command; exit 0)
-- [ ] `registry` ships with a commented example line pointing at `example_echo.sh`
-- [ ] Tests: match, no match, failing hook stops the main command, args pass through via `"$@"`
+- [x] `registry` parser: three whitespace-separated columns, skip blank lines and `#` comments
+- [x] `aliprehook_run <cmd_name>`: look up `(key, cmd)` → run hook; non-zero exit aborts
+- [x] `aliprehook_define <name> <command...>`: creates the wrapper function from 01
+- [x] `hooks/example_echo.sh` (safe: prints that aliprehook ran, key, command; exit 0)
+- [x] `registry` ships with a commented example line pointing at `example_echo.sh`
+- [x] Tests: match, no match, failing hook stops the main command, args pass through via `"$@"`
 
 **Done when:** `aliprehook_define Dup docker compose up` in `~/.zshrc` runs the user hook in a registered repo and plain `docker compose up` everywhere else.
 
