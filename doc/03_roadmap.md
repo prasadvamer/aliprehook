@@ -22,13 +22,13 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 1 — Project key resolution
 
-- [ ] `aliprehook_normalize_remote <url>`
+- [x] `aliprehook_normalize_remote <url>`
   - Strip `https://`, `http://`, `ssh://`, `git@` / userinfo
   - SCP-style `host:org/repo` → `host/org/repo`
   - Drop trailing `.git` and `/`
   - Lowercase host
-- [ ] `aliprehook_project_key`: `origin` → first fetch remote → `pwd -P`
-- [ ] Tests for every row of the normalization table in 01, plus: no git, git with no remotes, non-`origin` remote only
+- [x] `aliprehook_project_key`: `origin` → first fetch remote → `pwd -P`
+- [x] Tests for every row of the normalization table in 01, plus: no git, git with no remotes, non-`origin` remote only
 
 **Done when:** all four URL forms of `sample_app_web` give `github.com/org/sample_app_web`, and a folder with no git gives its `pwd -P` path.
 
