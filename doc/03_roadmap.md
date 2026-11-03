@@ -45,12 +45,12 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 3 — Project layer + allow gate
 
-- [ ] `allowed` file: one normalized key per line
-- [ ] `aliprehook allow` / `aliprehook revoke` for the current project key
-- [ ] Read `.aliprehook.yml` `hooks:` map (minimal parser; no full YAML dependency)
-- [ ] Resolve hook paths relative to the repo root; reject paths that leave the repo
-- [ ] Run order: user hook → project hook (only if allowed) → main command
-- [ ] Tests: not allowed → project hook skipped, allowed → runs, revoke → skipped again
+- [x] `allowed` file: one normalized key per line
+- [x] `aliprehook allow` / `aliprehook revoke` for the current project key
+- [x] Read `.aliprehook.yml` `hooks:` map (minimal parser; no full YAML dependency)
+- [x] Resolve hook paths relative to the repo root; reject paths that leave the repo
+- [x] Run order: user hook → project hook (only if allowed) → main command
+- [x] Tests: not allowed → project hook skipped, allowed → runs, revoke → skipped again
 
 **Done when:** cloning a repo with `.aliprehook.yml` runs nothing until `aliprehook allow`, and `aliprehook revoke` turns it off again.
 

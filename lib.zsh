@@ -82,11 +82,78 @@ aliprehook_registry_lookup() {
   return 1
 }
 
-# Run prehooks for <cmd_name>. Extra args are passed to the hook.
-# Returns non-zero (the hook's exit code) if a hook fails.
+# Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed.
+aliprehook_is_allowed() {
+  emulate -L zsh -o extended_glob
+  local key=$1 line
+  local allowed=$ALIPREHOOK_HOME/allowed
+
+  [[ -n $key && -r $allowed ]] || return 1
+  while read -r line; do
+    [[ $line == "$key" ]] && return 0
+  done < $allowed
+  return 1
+}
+
+# Print the hook path for <cmd> from <root>/.aliprehook.yml, if any.
+# Minimal parser for:
+#   hooks:
+#     Dup: .aliprehook/before_Dup.sh
+aliprehook_project_lookup() {
+  emulate -L zsh -o extended_glob
+  local root=$1 cmd=$2 line name value in_hooks=0
+  local yml=$root/.aliprehook.yml
+
+  [[ -r $yml ]] || return 1
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    line=${line%%[[:space:]]##\#*}       # inline comment
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    if [[ $line != [[:space:]]* ]]; then  # top-level key
+      [[ $line == hooks:[[:space:]]# ]] && in_hooks=1 || in_hooks=0
+      continue
+    fi
+    (( in_hooks )) || continue
+    [[ $line == [[:space:]]##(#b)([^:[:space:]]##):[[:space:]]#(*) ]] || continue
+    name=$match[1]
+    value=${match[2]%%[[:space:]]#}
+    [[ $value == \"*\" || $value == \'*\' ]] && value=${${value#?}%?}
+    if [[ $name == "$cmd" && -n $value ]]; then
+      print -r -- $value
+      return 0
+    fi
+  done < $yml
+
+  return 1
+}
+
+# Run one hook with the aliprehook environment. Returns its exit code.
+_aliprehook_exec() {
+  emulate -L zsh
+  local layer=$1 key=$2 cmd=$3 hook=$4 rc
+  shift 4
+
+  if [[ ! -f $hook ]]; then
+    print -u2 "aliprehook: $layer hook not found: $hook"
+    return 1
+  fi
+  if [[ ! -x $hook ]]; then
+    print -u2 "aliprehook: $layer hook not executable: $hook (run: chmod +x $hook)"
+    return 1
+  fi
+  ALIPREHOOK_PROJECT_KEY=$key ALIPREHOOK_COMMAND=$cmd $hook "$@"
+  rc=$?
+  if (( rc != 0 )); then
+    print -u2 "aliprehook: $cmd aborted: $layer hook exited $rc ($hook)"
+  fi
+  return $rc
+}
+
+# Run prehooks for <cmd_name>: user layer, then project layer if allowed.
+# Extra args are passed to the hooks. Returns non-zero if a hook fails.
 aliprehook_run() {
   emulate -L zsh -o extended_glob
-  local cmd=$1 key hook rc
+  local cmd=$1 key hook root rel
   shift
 
   [[ -n $cmd ]] || { print -u2 "aliprehook_run: missing command name"; return 2; }
@@ -95,23 +162,77 @@ aliprehook_run() {
 
   # User layer.
   if hook=$(aliprehook_registry_lookup $key $cmd); then
-    if [[ ! -f $hook ]]; then
-      print -u2 "aliprehook: hook not found: $hook (registry: $key $cmd)"
-      return 1
-    fi
-    if [[ ! -x $hook ]]; then
-      print -u2 "aliprehook: hook not executable: $hook (run: chmod +x $hook)"
-      return 1
-    fi
-    ALIPREHOOK_PROJECT_KEY=$key ALIPREHOOK_COMMAND=$cmd $hook "$@"
-    rc=$?
-    if (( rc != 0 )); then
-      print -u2 "aliprehook: $cmd aborted: hook exited $rc ($hook)"
-      return $rc
-    fi
+    _aliprehook_exec user $key $cmd $hook "$@" || return $?
   fi
 
-  return 0
+  # Project layer: git repos only, and only if allowed.
+  root=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
+  [[ -n $root && -f $root/.aliprehook.yml ]] || return 0
+  aliprehook_is_allowed $key || return 0
+  rel=$(aliprehook_project_lookup $root $cmd) || return 0
+
+  root=${root:A}
+  if [[ $rel == /* ]]; then
+    print -u2 "aliprehook: project hook must be a relative path: $rel"
+    return 1
+  fi
+  hook=${${:-$root/$rel}:A}
+  if [[ $hook != $root/* ]]; then
+    print -u2 "aliprehook: project hook outside the repo: $rel"
+    return 1
+  fi
+  ALIPREHOOK_PROJECT_ROOT=$root _aliprehook_exec project $key $cmd $hook "$@"
+}
+
+# aliprehook allow | revoke | key | help
+aliprehook() {
+  emulate -L zsh -o extended_glob
+  local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed tmp line
+  (( $# )) && shift
+
+  case $sub in
+    allow)
+      root=$(command git rev-parse --show-toplevel 2>/dev/null)
+      if [[ -z $root || ! -f $root/.aliprehook.yml ]]; then
+        print -u2 "aliprehook allow: no .aliprehook.yml in this git repo"
+        return 1
+      fi
+      key=$(aliprehook_project_key)
+      if aliprehook_is_allowed $key; then
+        print "aliprehook: already allowed: $key"
+        return 0
+      fi
+      mkdir -p $ALIPREHOOK_HOME
+      print -r -- $key >> $allowed
+      print "aliprehook: allowed $key"
+      print "  project hooks from $root/.aliprehook.yml will now run"
+      ;;
+    revoke)
+      key=$(aliprehook_project_key)
+      if ! aliprehook_is_allowed $key; then
+        print "aliprehook: not allowed: $key"
+        return 0
+      fi
+      tmp=$allowed.tmp.$$
+      while IFS= read -r line; do
+        [[ ${line//[[:space:]]/} == "$key" ]] || print -r -- $line
+      done < $allowed > $tmp && mv $tmp $allowed
+      print "aliprehook: revoked $key"
+      ;;
+    key)
+      aliprehook_project_key
+      ;;
+    help|-h|--help|'')
+      print "usage: aliprehook <allow|revoke|key|help>"
+      print "  allow   run project hooks from this repo's .aliprehook.yml"
+      print "  revoke  stop running them"
+      print "  key     print the project key for the current directory"
+      ;;
+    *)
+      print -u2 "aliprehook: unknown command: $sub (see: aliprehook help)"
+      return 2
+      ;;
+  esac
 }
 
 # Define <name> as a shell function that runs prehooks, then <command...> "$@".
