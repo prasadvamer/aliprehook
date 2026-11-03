@@ -19,6 +19,14 @@ Then add to `~/.zshrc`:
 source ~/.config/aliprehook/lib.zsh
 ```
 
+## Dev uninstall
+
+```sh
+./uninstall.sh   # removes lib.zsh and README.md; keeps registry, allowed, hooks/
+```
+
+Then remove the `source` line from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.
+
 ## Tests
 
 ```sh

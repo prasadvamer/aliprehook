@@ -9,8 +9,16 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 - [x] Repo layout: `lib.zsh`, `hooks/`, `README.md`, `tests/`, `doc/`
 - [x] Pick a test runner for zsh: plain zsh scripts, `zsh tests/run.zsh`
 - [x] `install.sh` (dev only) that copies/symlinks into `~/.config/aliprehook/`
+- [x] `uninstall.sh` (dev only), the reverse of `install.sh`:
+  - Removes only what `install.sh` manages: `lib.zsh` and `README.md` (symlink or copy)
+  - **Never** removes user data: `registry`, `allowed`, `hooks/`
+  - Respects `ALIPREHOOK_HOME`, same as `install.sh`
+  - Safe to run twice; no error if already uninstalled
+  - Warns if `~/.zshrc` still sources `lib.zsh` (does not edit `~/.zshrc`)
+  - Prints what was kept and the manual full-removal command (`rm -rf ~/.config/aliprehook`)
+- [x] `tests/test_uninstall.zsh`: managed files removed, user data untouched, second run is a no-op, reinstall after uninstall works
 
-**Done when:** `install.sh` creates `~/.config/aliprehook/{README.md,lib.zsh,registry,allowed,hooks/}` and `source ~/.config/aliprehook/lib.zsh` loads with no errors.
+**Done when:** `install.sh` creates `~/.config/aliprehook/{README.md,lib.zsh,registry,allowed,hooks/}`, `source ~/.config/aliprehook/lib.zsh` loads with no errors, and `uninstall.sh` removes `lib.zsh` + `README.md` while `registry`, `allowed` and `hooks/` stay exactly as they were.
 
 ## Phase 1 — Project key resolution
 
@@ -82,7 +90,31 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 - [ ] Project site: docs + both install paths (`brew install …` and `curl … | sh`)
 - [ ] Versioned upgrades that do not break `registry` / `allowed` (format version + migration)
 
-**Done when:** `brew install` and the install script both install the same tagged release, and an upgrade keeps existing config working.
+### Uninstall
+
+Rule for every install path: **uninstall removes the program, never user data.** User data (`registry`, `allowed`, `hooks/`) lives in `~/.config/aliprehook/` and is only removed by the user.
+
+- [ ] Split program files from user data:
+  - Program (`lib.zsh`, README): Brew prefix (`$(brew --prefix)/share/aliprehook/`) or install-script dir (e.g. `~/.local/share/aliprehook/`)
+  - User data: `~/.config/aliprehook/`, created by `aliprehook init`
+  - `~/.zshrc` sources the program path, not `~/.config`
+- [ ] Install script: `--uninstall` removes only the program files it installed; keeps user data; warns about the `~/.zshrc` line
+- [ ] Homebrew: `brew uninstall aliprehook` removes the program (Brew never touches `~/.config`)
+  - Formula `caveats` text: user data is kept in `~/.config/aliprehook/`; remove the `source` line from `~/.zshrc`; `rm -rf ~/.config/aliprehook` for full removal
+- [ ] `aliprehook doctor` detects a leftover `~/.zshrc` `source` line pointing at a missing `lib.zsh`
+- [ ] README + site **Uninstall** section covering all three paths:
+
+  | Installed with | Remove program | Remove user data (optional) |
+  |---|---|---|
+  | Dev (`install.sh`) | `./uninstall.sh` | `rm -rf ~/.config/aliprehook` |
+  | Install script | `curl -fsSL … \| sh -s -- --uninstall` | `rm -rf ~/.config/aliprehook` |
+  | Homebrew | `brew uninstall aliprehook` | `rm -rf ~/.config/aliprehook` |
+
+  Plus, for every path: remove `source …/lib.zsh` from `~/.zshrc` and open a new shell.
+
+- [ ] Tests: install → uninstall → reinstall keeps existing hooks working, for the install script and the Brew formula (`brew test`)
+
+**Done when:** `brew install` and the install script both install the same tagged release, an upgrade keeps existing config working, and both uninstall paths remove the program while `~/.config/aliprehook/` stays intact.
 
 ## Phase 8 — Multi-shell
 
