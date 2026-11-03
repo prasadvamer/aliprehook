@@ -56,10 +56,10 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 4 — README + existing functions
 
-- [ ] `README.md` covers the 7 sections listed in 01 (what it is, setup, key order, registry, project layer + allow, adding a hook, try the example)
-- [ ] Document example `.aliprehook.yml`; add a stub in a personal test repo
-- [ ] Convert existing `.zshrc` functions using Case A / B / C from 01
-- [ ] Wire `source` + `aliprehook_define Dup docker compose up` into `~/.zshrc`
+- [x] `README.md` covers the 7 sections listed in 01 (what it is, setup, key order, registry, project layer + allow, adding a hook, try the example)
+- [x] Document example `.aliprehook.yml`; stub in `examples/project/` (copy into any repo to try)
+- [x] Convert existing `.zshrc` functions using Case A / B / C from 01 (none to convert yet; cases documented in README)
+- [x] Wire `source` + `aliprehook_define Dup docker compose up` into `~/.zshrc`
 
 **Done when:** someone new can open `~/.config/aliprehook/README.md`, add a hook, and see `example_echo.sh` run without reading these docs.
 

@@ -1,0 +1,3 @@
+# aliprehook project hooks. Only used after: aliprehook allow
+hooks:
+  Dup: .aliprehook/before_Dup.sh
