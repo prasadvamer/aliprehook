@@ -6,9 +6,9 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 0 — Repo setup
 
-- [ ] Repo layout: `lib.zsh`, `hooks/`, `README.md`, `tests/`, `doc/`
-- [ ] Pick a test runner for zsh (e.g. plain zsh test scripts, or `zunit`)
-- [ ] `install.sh` (dev only) that copies/symlinks into `~/.config/aliprehook/`
+- [x] Repo layout: `lib.zsh`, `hooks/`, `README.md`, `tests/`, `doc/`
+- [x] Pick a test runner for zsh: plain zsh scripts, `zsh tests/run.zsh`
+- [x] `install.sh` (dev only) that copies/symlinks into `~/.config/aliprehook/`
 
 **Done when:** `install.sh` creates `~/.config/aliprehook/{README.md,lib.zsh,registry,allowed,hooks/}` and `source ~/.config/aliprehook/lib.zsh` loads with no errors.
 
