@@ -76,11 +76,18 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 - [ ] `aliprehook init` (create user layer) and `aliprehook doctor` (check setup, permissions, sourcing)
 - [ ] Clear allow / revoke / explain UX, direnv-style messages when a repo has an un-allowed `.aliprehook.yml`
 - [ ] README warning: allowing a repo runs that repo's scripts
+- [ ] Content-bound allow (re-ask on change, direnv-style). Today `allowed` stores only the project key, so after `git pull` a changed `.aliprehook.yml` or hook script runs without asking.
+  - `allowed` stores key + clone root path (`pwd -P` of the repo root) + content hash: hash of `.aliprehook.yml` plus every hook script it references
+  - **Per clone, not per key (decided):** allowing one clone does not allow other clones of the same remote. A new clone is blocked until `aliprehook allow` is run in it.
+  - Hash changed → project hooks are skipped, with a message: `.aliprehook.yml changed; run aliprehook allow to review and re-allow`
+  - `aliprehook allow` shows the yml and hook list (or a diff vs the last allowed version) before recording the new hash
+  - **Existing key-only `allowed` lines need a re-allow (decided):** they no longer enable project hooks; the user runs `aliprehook allow` again in each clone. Show a message pointing at this when a key-only line matches.
+  - Tests: edit yml → skipped; edit a hook script → skipped; re-allow → runs; unrelated repo files changing → still allowed; second clone of an allowed remote → skipped until allowed there; old key-only line → skipped with re-allow message
 - [ ] Local hooks only; no remote script download
 - [ ] Document identity edge cases: forks (`origin` vs `upstream`), GitHub Enterprise / self-hosted GitLab, monorepos
 - [ ] License, CONTRIBUTING, changelog
 
-**Done when:** a fresh machine can go from install to a working hook using only the README.
+**Done when:** a fresh machine can go from install to a working hook using only the README, and changing an allowed repo's `.aliprehook.yml` or hook scripts blocks its project hooks until `aliprehook allow` is run again.
 
 ## Phase 7 — Distribution
 
