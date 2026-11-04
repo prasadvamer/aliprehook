@@ -175,8 +175,6 @@ Plain text file under the user layer. Answers:
 
 ### Multiple hooks and the common (`*`) hook
 
-> Planned (roadmap Phase 5a). Today only the first matching line runs and `*` is not supported.
-
 A command can have **several user hooks**, and a **common hook** that runs in every project:
 
 ```text
@@ -261,7 +259,7 @@ Dup() {
 What `aliprehook_run Dup` does each call:
 
 1. Resolve project key (origin → first remote → PWD, normalized)
-2. **User layer:** run every `registry` hook for `(*, Dup)`, then for `(key, Dup)`, in file order (planned; today: first match only)
+2. **User layer:** run every `registry` hook for `(*, Dup)`, then for `(key, Dup)`, in file order; first failure stops
 3. **Project layer:** if `key` is in `allowed` and `.aliprehook.yml` maps `Dup` → run that hook
 4. Return; caller then runs the main command
 

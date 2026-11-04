@@ -71,13 +71,13 @@ Do 5a first: 5b builds on several user hooks running in order.
 
 Design: [01_shell-aliprehook-system.md](./01_shell-aliprehook-system.md) § Multiple hooks and the common (`*`) hook.
 
-- [ ] Registry: `*` as project key matches every project (user `registry` only)
+- [x] Registry: `*` as project key matches every project (user `registry` only)
 - [x] Project layer rejects `*`: `aliprehook allow` refuses, an already-allowed repo gets a warning and the entry is ignored (done early, `tests/test_project_wildcard.zsh`)
-- [ ] Run **all** matching lines: `*` lines first, then exact-key lines, file order within each group (replaces "first match wins")
-- [ ] First failing hook stops later hooks, the project layer and the main command
-- [ ] Same (key, command, hook) listed twice runs once
-- [ ] Update README § User registry, `templates/registry` comment and the Phase 2 test that checks "first line wins"
-- [ ] Tests: `*` only; several `*` lines for one command in file order; `*` for `Dup` does not run for `serve`; `*` + exact key order; several exact-key lines in file order; failure in `*` hook stops the rest; `*` hook runs in a project with no other lines; path-key projects match `*`; duplicates run once
+- [x] Run **all** matching lines: `*` lines first, then exact-key lines, file order within each group (replaces "first match wins")
+- [x] First failing hook stops later hooks, the project layer and the main command
+- [x] Same (key, command, hook) listed twice runs once
+- [x] Update README § User registry, `templates/registry` comment and the Phase 2 test that checks "first line wins"
+- [x] Tests: `*` only; several `*` lines for one command in file order; `*` for `Dup` does not run for `serve`; `*` + exact key order; several exact-key lines in file order; failure in `*` hook stops the rest; `*` hook runs in a project with no other lines; path-key projects match `*`; duplicates run once
 
 **Done when:** with a `*` line and two `sample_app_web` lines for `Dup`, running `Dup` in `sample_app_web` runs all three in order and then the main command, and in any other project runs only the `*` hook.
 

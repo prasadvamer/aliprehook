@@ -61,25 +61,36 @@ aliprehook_project_key() {
   pwd -P
 }
 
-# Print the hook path registered for (project key, command), if any.
-# First matching registry line wins. Relative paths are under ALIPREHOOK_HOME.
+# Print every hook registered for (project key, command), one path per line:
+# `*` lines first, then lines for the exact key; file order within each group.
+# The same (key, command, hook) line listed twice is printed once.
+# Relative paths are under ALIPREHOOK_HOME. Returns 1 if nothing matches.
 aliprehook_registry_lookup() {
   emulate -L zsh -o extended_glob
-  local key=$1 cmd=$2 k c h
+  local key=$1 cmd=$2 k c h id
   local registry=$ALIPREHOOK_HOME/registry
+  local -a common exact
+  local -A seen
 
   [[ -r $registry ]] || return 1
 
   while read -r k c h _; do
     [[ -z $k || $k == \#* ]] && continue
-    if [[ $k == "$key" && $c == "$cmd" && -n $h ]]; then
-      [[ $h == /* ]] || h=$ALIPREHOOK_HOME/$h
-      print -r -- $h
-      return 0
+    [[ $c == "$cmd" && -n $h ]] || continue
+    [[ $k == '*' || $k == "$key" ]] || continue
+    id="$k"$'\t'"$h"
+    (( ${+seen[$id]} )) && continue
+    seen[$id]=1
+    [[ $h == /* ]] || h=$ALIPREHOOK_HOME/$h
+    if [[ $k == '*' ]]; then
+      common+=($h)
+    else
+      exact+=($h)
     fi
   done < $registry
 
-  return 1
+  (( $#common + $#exact )) || return 1
+  print -rl -- $common $exact
 }
 
 # Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed.
@@ -95,18 +106,20 @@ aliprehook_is_allowed() {
   return 1
 }
 
-# Print the hook path for <cmd> from <root>/.aliprehook.yml, if any.
-# Minimal parser for:
+# Print every entry under `hooks:` in <root>/.aliprehook.yml as
+# "<line>\t<name>\t<value>". Minimal parser for:
 #   hooks:
 #     Dup: .aliprehook/before_Dup.sh
-aliprehook_project_lookup() {
+_aliprehook_project_entries() {
   emulate -L zsh -o extended_glob
-  local root=$1 cmd=$2 line name value in_hooks=0
+  local root=$1 line name value in_hooks=0
   local yml=$root/.aliprehook.yml
+  integer n=0
 
   [[ -r $yml ]] || return 1
 
   while IFS= read -r line || [[ -n $line ]]; do
+    (( n++ ))
     line=${line%%[[:space:]]##\#*}       # inline comment
     [[ $line == [[:space:]]#(\#*|) ]] && continue
     if [[ $line != [[:space:]]* ]]; then  # top-level key
@@ -117,13 +130,52 @@ aliprehook_project_lookup() {
     [[ $line == [[:space:]]##(#b)([^:[:space:]]##):[[:space:]]#(*) ]] || continue
     name=$match[1]
     value=${match[2]%%[[:space:]]#}
+    [[ $name == \"*\" || $name == \'*\' ]] && name=${${name#?}%?}
     [[ $value == \"*\" || $value == \'*\' ]] && value=${${value#?}%?}
+    print -r -- "$n"$'\t'"$name"$'\t'"$value"
+  done < $yml
+}
+
+# Print problems in <root>/.aliprehook.yml, one per line. Exit 1 if any.
+# `*` (all-projects) hooks are user-registry only: a repo must not define them.
+aliprehook_project_check() {
+  emulate -L zsh -o extended_glob
+  local root=$1 entry n name value
+  local -a problems
+
+  for entry in "${(@f)$(_aliprehook_project_entries $root)}"; do
+    [[ -n $entry ]] || continue
+    n=${entry%%$'\t'*}; entry=${entry#*$'\t'}
+    name=${entry%%$'\t'*}; value=${entry#*$'\t'}
+    if [[ $name == '*' ]]; then
+      problems+=(".aliprehook.yml:$n: '*' hooks are not allowed in a repo; only in your user registry ($ALIPREHOOK_HOME/registry)")
+    elif [[ $name != [A-Za-z_][A-Za-z0-9_-]# ]]; then
+      problems+=(".aliprehook.yml:$n: invalid command name: $name")
+    elif [[ -z $value ]]; then
+      problems+=(".aliprehook.yml:$n: missing hook path for $name")
+    fi
+  done
+
+  (( $#problems )) || return 0
+  print -rl -- $problems
+  return 1
+}
+
+# Print the hook path for <cmd> from <root>/.aliprehook.yml, if any.
+# Invalid entries (e.g. `*`) never match.
+aliprehook_project_lookup() {
+  emulate -L zsh -o extended_glob
+  local root=$1 cmd=$2 entry name value
+
+  [[ $cmd == [A-Za-z_][A-Za-z0-9_-]# ]] || return 1
+  for entry in "${(@f)$(_aliprehook_project_entries $root)}"; do
+    entry=${entry#*$'\t'}
+    name=${entry%%$'\t'*}; value=${entry#*$'\t'}
     if [[ $name == "$cmd" && -n $value ]]; then
       print -r -- $value
       return 0
     fi
-  done < $yml
-
+  done
   return 1
 }
 
@@ -160,15 +212,23 @@ aliprehook_run() {
 
   key=$(aliprehook_project_key)
 
-  # User layer.
-  if hook=$(aliprehook_registry_lookup $key $cmd); then
+  # User layer: every matching registry hook, in order; first failure stops.
+  local -a hooks
+  hooks=("${(@f)$(aliprehook_registry_lookup $key $cmd)}")
+  for hook in $hooks; do
+    [[ -n $hook ]] || continue
     _aliprehook_exec user $key $cmd $hook "$@" || return $?
-  fi
+  done
 
   # Project layer: git repos only, and only if allowed.
   root=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
   [[ -n $root && -f $root/.aliprehook.yml ]] || return 0
   aliprehook_is_allowed $key || return 0
+  local problems
+  if ! problems=$(aliprehook_project_check $root); then
+    print -u2 -r -- "${(F)${(@f)problems/#/aliprehook: warning: }}"
+    print -u2 "aliprehook: warning: invalid entries ignored; fix $root/.aliprehook.yml"
+  fi
   rel=$(aliprehook_project_lookup $root $cmd) || return 0
 
   root=${root:A}
@@ -195,6 +255,11 @@ aliprehook() {
       root=$(command git rev-parse --show-toplevel 2>/dev/null)
       if [[ -z $root || ! -f $root/.aliprehook.yml ]]; then
         print -u2 "aliprehook allow: no .aliprehook.yml in this git repo"
+        return 1
+      fi
+      if ! line=$(aliprehook_project_check $root); then
+        print -u2 -r -- "${(F)${(@f)line/#/aliprehook allow: }}"
+        print -u2 "aliprehook allow: not allowed; fix $root/.aliprehook.yml first"
         return 1
       fi
       key=$(aliprehook_project_key)

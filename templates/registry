@@ -1,11 +1,15 @@
-# aliprehook user registry: which hook runs before which command, per project.
+# aliprehook user registry: which hooks run before which command, per project.
 #
 # Columns (whitespace-separated):
 #   project_key  command  hook_relative_path
 #
-# Get the key for the current directory with: aliprehook_project_key
+# Get the key for the current directory with: aliprehook key
+# Use * as the key to run a hook in every project (for that command).
 # Hook paths are relative to ~/.config/aliprehook/ (or absolute).
-# The first matching line wins.
+# Every matching line runs: * lines first, then the project's lines, in file order.
 #
 # Example: run the safe example hook before `Dup` in one repo.
 # github.com/org/sample_app_web  Dup  hooks/example_echo.sh
+#
+# Example: run it before `Dup` in every project.
+# *  Dup  hooks/example_echo.sh

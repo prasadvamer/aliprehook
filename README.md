@@ -11,7 +11,7 @@ You keep typing your own short commands (`Dup`, `serve`, …). aliprehook lets a
 ```text
 You type: Dup --watch
     │
-    ├─ 1) User layer: your hook for (this project, Dup)? → run it
+    ├─ 1) User layer: your hooks for Dup (all projects `*`, then this project) → run them
     ├─ 2) Project layer: repo's .aliprehook.yml hook for Dup? → run it, only if you allowed this repo
     └─ 3) docker compose up --watch
 ```
@@ -134,7 +134,9 @@ aliprehook key
 
 ```text
 # project_key                     command  hook
+*                                 Dup      hooks/common_Dup.sh
 github.com/org/sample_app_web     Dup      hooks/sample_app_web_Dup.sh
+github.com/org/sample_app_web     Dup      hooks/sample_app_web_db.sh
 github.com/org/sample_app_web     serve    hooks/sample_app_web_serve.sh
 /home/me/scratch/playground       Dup      hooks/scratch_Dup.sh
 ```
@@ -142,8 +144,22 @@ github.com/org/sample_app_web     serve    hooks/sample_app_web_serve.sh
 - Columns are separated by spaces or tabs. No spaces inside a column.
 - Hook paths are relative to `~/.config/aliprehook/` (or absolute).
 - Lines starting with `#` and blank lines are ignored.
-- The first matching line wins.
+- **Every** matching line runs, not just the first.
 - User hooks apply to every clone with the same key.
+
+### Common hooks: `*`
+
+A `*` key matches **every** project, for that command only. Use it for steps every project needs (VPN check, registry login, …):
+
+```text
+*  Dup  hooks/common_vpn_check.sh
+*  Dup  hooks/common_docker_login.sh
+```
+
+- Run order: all `*` lines first, then the lines for the current project; file order within each group. With the example above, `Dup` in `sample_app_web` runs `common_Dup.sh`, `sample_app_web_Dup.sh`, `sample_app_web_db.sh`, then the project hook (if allowed), then `docker compose up`.
+- The first failing hook stops everything after it, including the main command.
+- The same line listed twice runs once.
+- `*` is the only wildcard (no `github.com/org/*`), and it works only here in your registry, never in a repo's `.aliprehook.yml`.
 
 ## 5. Project layer and `aliprehook allow`
 

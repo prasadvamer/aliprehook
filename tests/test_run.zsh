@@ -47,7 +47,8 @@ cd $tmp/repo
 
 reset; aliprehook_run Dup a "b c"; rc=$?
 assert_eq 0 $rc "match: exit 0"
-assert_eq "hook:${key}:Dup:a b c" "$(logged)" "match: first line wins, env + args"
+assert_eq "hook:${key}:Dup:a b c
+hook:${key}:Dup:a b c" "$(logged)" "match: all matching lines run, env + args"
 
 reset; aliprehook_run Other; rc=$?
 assert_eq 0 $rc "unknown command: exit 0"
@@ -91,7 +92,8 @@ aliprehook_define Dup main up
 reset; Dup --watch "x y"; rc=$?
 assert_eq 0 $rc "define: exit 0"
 assert_eq "hook:${key}:Dup:--watch x y
-main:up|--watch|x y" "$(logged)" "define: hook then main, args pass through"
+hook:${key}:Dup:--watch x y
+main:up|--watch|x y" "$(logged)" "define: hooks then main, args pass through"
 
 aliprehook_define Fail main up
 reset; Fail 2>/dev/null; rc=$?
