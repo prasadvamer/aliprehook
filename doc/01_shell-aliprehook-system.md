@@ -357,8 +357,8 @@ Full design, issues and open decisions: [04_hook-env.md](./04_hook-env.md).
 - `aliprehook_normalize_remote <url>`
 - `aliprehook_project_key` — origin → first remote → `pwd -P`, remotes normalized
 - `aliprehook_run <cmd_name>` — user hook then (if allowed) project hook
-- `aliprehook_define <name> <command...>` — function wrapper around `aliprehook_run` + command
-- `aliprehook_with_env <command...>` — run a command with the variables hooks wrote to `ALIPREHOOK_ENV_FILE`
+- `aliprehook_define [--keep-env] <name> <command...>` — function wrapper around `aliprehook_run` + command
+- `aliprehook_with_env [--keep-env] <command...>` — run a command with the variables hooks wrote to `ALIPREHOOK_ENV_FILE` (Case B functions; `aliprehook_define` wrappers declare them directly so aliases still work)
 - `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]`
 - `aliprehook allow` / `aliprehook revoke` — manage `allowed` for current project key
 - Optional later: `aliprehook explain <cmd>` — print what would run

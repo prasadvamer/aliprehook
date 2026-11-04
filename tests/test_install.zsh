@@ -8,6 +8,7 @@ export ALIPREHOOK_HOME=$tmp/aliprehook
 $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "install.sh exited non-zero"
 assert_link $ALIPREHOOK_HOME/lib.zsh
 assert_link $ALIPREHOOK_HOME/README.md
+assert_link $ALIPREHOOK_HOME/bin/aliprehook_env_pass
 assert_file $ALIPREHOOK_HOME/registry
 assert_file $ALIPREHOOK_HOME/allowed
 assert_dir  $ALIPREHOOK_HOME/hooks
@@ -31,6 +32,11 @@ rm -rf $ALIPREHOOK_HOME
 $ALIPREHOOK_ROOT/install.sh --copy >/dev/null || fail "install.sh --copy exited non-zero"
 [[ ! -L $ALIPREHOOK_HOME/lib.zsh ]] || fail "--copy made a symlink"
 assert_file $ALIPREHOOK_HOME/lib.zsh
+[[ ! -L $ALIPREHOOK_HOME/bin/aliprehook_env_pass && -x $ALIPREHOOK_HOME/bin/aliprehook_env_pass ]] || fail "--copy: aliprehook_env_pass not an executable copy"
+
+# Copy install: lib.zsh finds bin/ next to itself.
+out=$(zsh -fc "source $ALIPREHOOK_HOME/lib.zsh && print -r -- \$ALIPREHOOK_LIB_DIR" 2>&1)
+assert_eq ${ALIPREHOOK_HOME:A} "$out" "copy install: ALIPREHOOK_LIB_DIR"
 
 # Unknown flag is rejected.
 $ALIPREHOOK_ROOT/install.sh --bogus 2>/dev/null && fail "unknown flag accepted"

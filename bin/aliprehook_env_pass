@@ -1,0 +1,105 @@
+#!/bin/sh
+# aliprehook_env_pass: pass variables from a hook to the main command.
+#
+#   aliprehook_env_pass [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]
+#
+# NAME passes an exported variable from the hook; NAME=value sets and passes.
+# Names are optional by default (missing value: warning). --required and
+# --optional switch the mode for all names after them. A missing required
+# value makes aliprehook stop the main command after the hook finishes.
+# --allow-empty (anywhere) passes empty values instead of treating them as missing.
+#
+# Exit: 0 ok (warnings allowed), 1 required value missing, 2 usage error.
+
+set -u
+prog=aliprehook_env_pass
+hook=${ALIPREHOOK_HOOK:-hook}
+hook=${hook##*/}
+cmd=${ALIPREHOOK_COMMAND:-the command}
+
+usage() {
+  echo "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]" >&2
+}
+
+case ${1:-} in -h|--help) usage; exit 0 ;; esac
+
+if [ -z "${ALIPREHOOK_ENV_FILE:-}" ] || [ ! -f "$ALIPREHOOK_ENV_FILE" ] || [ ! -w "$ALIPREHOOK_ENV_FILE" ]; then
+  echo "$prog: must be run from an aliprehook hook (ALIPREHOOK_ENV_FILE is not set)" >&2
+  exit 2
+fi
+
+# Pass 1: validate everything before writing anything.
+allow_empty=0
+names=0
+for arg do
+  case $arg in
+    --allow-empty) allow_empty=1 ;;
+    --required|--optional) ;;
+    -*) echo "$prog: unknown option: $arg" >&2; usage; exit 2 ;;
+    *)
+      name=${arg%%=*}
+      case $name in
+        ''|[0-9]*|*[!A-Za-z0-9_]*) echo "$prog: invalid variable name: $name" >&2; exit 2 ;;
+        ALIPREHOOK_*) echo "$prog: reserved variable name: $name" >&2; exit 2 ;;
+      esac
+      names=$((names + 1))
+      ;;
+  esac
+done
+if [ "$names" -eq 0 ]; then
+  usage
+  exit 2
+fi
+
+nl='
+'
+write_var() {  # name value
+  case $2 in
+    *"$nl"*)
+      while :; do
+        delim=ALIPREHOOK_EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+        printf '%s\n' "$2" | grep -qxF "$delim" || break
+      done
+      printf '%s<<%s\n%s\n%s\n' "$1" "$delim" "$2" "$delim" >> "$ALIPREHOOK_ENV_FILE"
+      ;;
+    *)
+      printf '%s=%s\n' "$1" "$2" >> "$ALIPREHOOK_ENV_FILE"
+      ;;
+  esac
+}
+
+# Pass 2: pass values, report missing ones.
+mode=optional
+status=0
+for arg do
+  case $arg in
+    --allow-empty) continue ;;
+    --required) mode=required; continue ;;
+    --optional) mode=optional; continue ;;
+  esac
+
+  case $arg in
+    *=*)
+      name=${arg%%=*}
+      value=${arg#*=}
+      isset=x
+      ;;
+    *)
+      name=$arg
+      eval "isset=\${$name+x}"
+      eval "value=\${$name-}"
+      ;;
+  esac
+
+  if [ -n "$isset" ] && { [ -n "$value" ] || [ "$allow_empty" -eq 1 ]; }; then
+    write_var "$name" "$value"
+  elif [ "$mode" = required ]; then
+    echo "aliprehook: error: $hook: $name has no value (required)" >&2
+    printf '!required-missing %s\n' "$name" >> "$ALIPREHOOK_ENV_FILE"
+    status=1
+  else
+    echo "aliprehook: warning: $hook: $name has no value (unset, empty or not exported); not passed to $cmd" >&2
+  fi
+done
+
+exit $status

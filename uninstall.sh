@@ -11,12 +11,13 @@ if [ ! -d "$dest" ]; then
   exit 0
 fi
 
-for f in lib.zsh README.md; do
+for f in lib.zsh README.md bin/aliprehook_env_pass; do
   if [ -L "$dest/$f" ] || [ -f "$dest/$f" ]; then
     rm -f "$dest/$f"
     echo "removed $dest/$f"
   fi
 done
+rmdir "$dest/bin" 2>/dev/null || true
 
 for f in registry allowed hooks; do
   [ -e "$dest/$f" ] && echo "kept    $dest/$f"

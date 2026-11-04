@@ -18,6 +18,7 @@ before=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh
 $ALIPREHOOK_ROOT/uninstall.sh >/dev/null 2>&1 || fail "uninstall.sh exited non-zero"
 [[ ! -e $ALIPREHOOK_HOME/lib.zsh && ! -L $ALIPREHOOK_HOME/lib.zsh ]] || fail "lib.zsh not removed"
 [[ ! -e $ALIPREHOOK_HOME/README.md && ! -L $ALIPREHOOK_HOME/README.md ]] || fail "README.md not removed"
+[[ ! -e $ALIPREHOOK_HOME/bin ]] || fail "bin/ not removed"
 after=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh)
 assert_eq "$before" "$after" "user data unchanged"
 

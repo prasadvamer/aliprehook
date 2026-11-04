@@ -39,6 +39,8 @@ This creates `~/.config/aliprehook/`:
   allowed            # repos whose project hooks may run
   hooks/
     example_echo.sh  # safe example hook
+  bin/
+    aliprehook_env_pass  # used by hooks to pass variables (see 8.)
 ```
 
 ### Try it in your current shell first
@@ -78,6 +80,8 @@ hello and more
 functions hello
 # hello () {
 #   aliprehook_run hello "$@" || return $?   ← runs hooks for "hello" first (none yet)
+#   _aliprehook_env_decl                     ← picks up variables the hooks passed (none yet)
+#   eval "$_aliprehook_env_code"
 #   echo hello from aliprehook "$@"         ← then your command, with your arguments
 # }
 ```
@@ -92,6 +96,12 @@ Dup --watch    # same as: docker compose up --watch (plus hooks for this project
 ```
 
 If `Dup` was already an alias, `aliprehook_define` replaces it.
+
+Add `--keep-env` before the name to keep variables your hooks pass in the terminal afterwards (see [8. Pass variables to the command](#8-pass-variables-to-the-command)):
+
+```zsh
+aliprehook_define --keep-env Dup docker compose up
+```
 
 ### Make it permanent
 
@@ -220,9 +230,15 @@ A hook gets:
 | `ALIPREHOOK_PROJECT_KEY` | Project key |
 | `ALIPREHOOK_COMMAND` | Command name (`Dup`) |
 | `ALIPREHOOK_PROJECT_ROOT` | Repo root (project hooks only) |
+| `ALIPREHOOK_HOOK` | Path of the running hook |
+| `ALIPREHOOK_ENV_FILE` | File for passing variables to the command (use `aliprehook_env_pass`) |
+| `ALIPREHOOK_ENV_PASS_BIN` | Full path of `aliprehook_env_pass` |
+| `aliprehook_env_pass` on `PATH` | See [8. Pass variables to the command](#8-pass-variables-to-the-command) |
 | Working directory | Where you ran the command |
 
 Exit non-zero to stop the command. Print to stderr (`>&2`) to keep the command's stdout clean.
+
+`export` in a hook does **not** reach the command (a hook is a separate program); use `aliprehook_env_pass`.
 
 ## 7. Try the example
 
@@ -242,6 +258,62 @@ Docker Compose version …
 ```
 
 Remove that line from `registry` when done.
+
+## 8. Pass variables to the command
+
+A hook is a separate program, so `export FOO=…` inside it is gone when it exits. To hand variables to the main command, call **`aliprehook_env_pass`** from the hook. It is always on the hook's `PATH`; nothing to load.
+
+It takes one or more arguments:
+
+- `NAME`: pass an **exported** variable from the hook
+- `NAME=value`: set and pass in one step
+
+```sh
+#!/bin/sh
+# hooks/sample_app_web_Dup.sh
+# The AWS CLI prints `export AWS_…=…` lines; eval sets and exports them here.
+eval "$(aws configure export-credentials --profile dev --format env)" || exit 1
+aliprehook_env_pass AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+```
+
+```sh
+#!/bin/sh
+# Placeholders: replace `my-token-tool` with your real command.
+aliprehook_env_pass API_TOKEN="$(my-token-tool --profile dev)" APP_ENV=development
+```
+
+**Required and optional.** Names are optional by default: a missing value (unset, empty or not exported) prints a warning and the command still runs. `--required` and `--optional` switch the mode for all names after them:
+
+```sh
+aliprehook_env_pass DEBUG_LEVEL --required API_TOKEN REGION
+```
+
+```text
+aliprehook: warning: sample_app_web_Dup.sh: DEBUG_LEVEL has no value (unset, empty or not exported); not passed to Dup
+aliprehook: error: sample_app_web_Dup.sh: API_TOKEN has no value (required)
+aliprehook: Dup aborted: required variable missing: API_TOKEN
+```
+
+A missing required value stops the main command even if the hook exits 0; no `|| exit $?` needed. `--allow-empty` (anywhere in the call) passes empty values instead of treating them as missing.
+
+**Where the variables go:**
+
+- To the **main command only**. Your terminal is unchanged afterwards, unless the command was defined with `aliprehook_define --keep-env` (then your user hooks' variables stay set; project hooks' never do).
+- Several user hooks: a later one sees variables from earlier ones, and the later value wins.
+- User hooks win over the repo's project hook for the same name. Project hooks never see your hooks' variables.
+- Project hooks may not pass `PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `ZDOTDIR`, `IFS`, `PS4`, `PROMPT_COMMAND`, `HOME`, `SHELL`, `GIT_SSH_COMMAND` or `GIT_EXEC_PATH`. Names starting with `ALIPREHOOK_` are reserved.
+- Limits: 100 variables, 64 KiB per hook. Messages show names, never values.
+
+**Docker Compose:** variables reaching `docker compose` are not automatically inside the container. Compose uses them for `${VAR}` in `compose.yaml`; to pass one into a container, list it:
+
+```yaml
+services:
+  app:
+    environment:
+      - API_TOKEN      # value from the environment aliprehook set
+```
+
+Hooks in other languages can call `"$ALIPREHOOK_ENV_PASS_BIN" NAME=value`, or write `NAME=value` lines to `$ALIPREHOOK_ENV_FILE` themselves. Design details: [doc/04_hook-env.md](./doc/04_hook-env.md).
 
 ## Converting existing `.zshrc` functions
 
@@ -264,6 +336,15 @@ Dclear() {
 }
 ```
 
+To give a command in your function the variables the hooks passed, run it through `aliprehook_with_env` (once per `aliprehook_run`):
+
+```zsh
+Dclear() {
+  aliprehook_run Dclear "$@" || return $?
+  aliprehook_with_env ./scripts/clear.sh "$@"
+}
+```
+
 **Case C — mix:** same as B, `aliprehook_run` first, then your logic.
 
 | Situation | Use |
@@ -276,8 +357,10 @@ Dclear() {
 
 | Command | Does |
 |---|---|
-| `aliprehook_define <name> <command...>` | Define an opt-in command |
+| `aliprehook_define [--keep-env] <name> <command...>` | Define an opt-in command |
 | `aliprehook_run <name> [args...]` | Run hooks for `<name>` (used inside functions) |
+| `aliprehook_with_env [--keep-env] <command...>` | Run a command with the variables the last `aliprehook_run` collected |
+| `aliprehook_env_pass [--allow-empty] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
 | `aliprehook allow` | Allow this repo's `.aliprehook.yml` hooks |
 | `aliprehook revoke` | Stop allowing them |
 | `aliprehook key` | Print the project key for the current directory |
@@ -286,7 +369,7 @@ Dclear() {
 ## Uninstall
 
 ```sh
-./uninstall.sh   # removes lib.zsh and README.md; keeps registry, allowed, hooks/
+./uninstall.sh   # removes lib.zsh, README.md, bin/; keeps registry, allowed, hooks/
 ```
 
 Then remove the `source` and `aliprehook_define` lines from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.
