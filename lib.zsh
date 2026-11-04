@@ -16,6 +16,122 @@ _aliprehook_env_denylist=(PATH 'LD_*' 'DYLD_*' BASH_ENV ENV ZDOTDIR IFS PS4
   PROMPT_COMMAND HOME SHELL GIT_SSH_COMMAND GIT_EXEC_PATH)
 typeset -gi _aliprehook_env_max_bytes=65536 _aliprehook_env_max_vars=100
 
+# --- Output theme -----------------------------------------------------------
+# Colors come from one theme file (themes/<name>.theme, or a path in
+# ALIPREHOOK_THEME), with single roles overridden by ALIPREHOOK_HOME/theme.
+# No message hard-codes a color: everything goes through _aliprehook_msg.
+typeset -gA _aliprehook_theme
+typeset -g _aliprehook_theme_key=
+
+# Parse role=code lines from a theme file into _aliprehook_theme (never sourced).
+_aliprehook_theme_read() {
+  emulate -L zsh -o extended_glob
+  local line
+  while IFS= read -r line || [[ -n $line ]]; do
+    line=${line%%\#*}
+    if [[ $line == [[:space:]]#(#b)([a-z_]##)[[:space:]]#=[[:space:]]#([0-9\;]#)[[:space:]]# ]]; then
+      _aliprehook_theme[$match[1]]=$match[2]
+    fi
+  done < $1
+}
+
+# Load the theme if ALIPREHOOK_THEME or ALIPREHOOK_HOME changed since last time.
+_aliprehook_theme_ensure() {
+  emulate -L zsh
+  local name=${ALIPREHOOK_THEME:-purple} file
+  [[ "$name|$ALIPREHOOK_HOME" == "$_aliprehook_theme_key" ]] && return 0
+  _aliprehook_theme_key="$name|$ALIPREHOOK_HOME"
+  _aliprehook_theme=()
+  if [[ $name == */* ]]; then
+    file=$name
+  else
+    file=$ALIPREHOOK_LIB_DIR/themes/$name.theme
+  fi
+  if [[ -r $file ]]; then
+    _aliprehook_theme_read $file
+  else
+    print -u2 "aliprehook: warning: theme not found: $file (using no colors)"
+  fi
+  [[ -r $ALIPREHOOK_HOME/theme ]] && _aliprehook_theme_read $ALIPREHOOK_HOME/theme
+  return 0
+}
+
+# Exit 0 if output on file descriptor <fd> should be colored.
+_aliprehook_color_on() {
+  case ${ALIPREHOOK_COLOR:-auto} in
+    always) return 0 ;;
+    never) return 1 ;;
+  esac
+  [[ -z ${NO_COLOR-} && ${TERM-} != dumb && -t $1 ]]
+}
+
+# Append <text> in color <code> to the caller's $out (zsh dynamic scope).
+_aliprehook_paint() {
+  if (( color )) && [[ -n $1 ]]; then
+    out+=$'\e['"$1"m"$2"$'\e[0m'
+  else
+    out+=$2
+  fi
+}
+
+# Print one message:  _aliprehook_msg [-n] [-1|-2] <level> <part>...
+#   level  info | success | warning | error
+#   part   plain text (drawn in the level's color: info/success default,
+#          warning yellow, error red) or @role=text for a named item
+#          (@command= @hook= @key= @var= @hint= @success=), which keeps its
+#          own color. Parts are joined as given (include spaces yourself).
+#   -n     no "warning:" / "error:" label
+#   -1/-2  force stdout/stderr (default: warning/error → stderr, else stdout)
+_aliprehook_msg() {
+  emulate -L zsh -o extended_glob
+  local label=1 fd= level part out= tcode
+  integer color=0
+  while [[ $1 == -[n12] ]]; do
+    case $1 in
+      -n) label=0 ;;
+      -1) fd=1 ;;
+      -2) fd=2 ;;
+    esac
+    shift
+  done
+  level=$1
+  shift
+  if [[ -z $fd ]]; then
+    [[ $level == (warning|error) ]] && fd=2 || fd=1
+  fi
+  _aliprehook_theme_ensure
+  _aliprehook_color_on $fd && color=1
+  tcode=
+  [[ $level == (warning|error) ]] && tcode=${_aliprehook_theme[$level]-}
+
+  _aliprehook_paint "${_aliprehook_theme[brand]-}" aliprehook:
+  out+=' '
+  if (( label )) && [[ $level == (warning|error) ]]; then
+    _aliprehook_paint "${tcode:+1;$tcode}" "$level:"
+    out+=' '
+  fi
+  for part in "$@"; do
+    if [[ $part == '@'(#b)([a-z]##)=(*) ]]; then
+      _aliprehook_paint "${_aliprehook_theme[$match[1]]-}" "$match[2]"
+    else
+      _aliprehook_paint "$tcode" "$part"
+    fi
+  done
+  print -u$fd -r -- $out
+}
+
+# The resolved theme as "role=code ..." for hooks (aliprehook_env_pass).
+_aliprehook_theme_codes() {
+  emulate -L zsh
+  _aliprehook_theme_ensure
+  local k
+  local -a pairs
+  for k in ${(k)_aliprehook_theme}; do
+    pairs+=("$k=${_aliprehook_theme[$k]}")
+  done
+  print -r -- "${pairs[*]}"
+}
+
 # Normalize a git remote URL to host/path form, e.g.
 #   git@github.com:org/repo.git -> github.com/org/repo
 # Prints the result; returns 1 on empty input.
@@ -198,19 +314,32 @@ _aliprehook_tmpfile() {
   (umask 077; command mktemp "${dir%/}/aliprehook.XXXXXXXX")
 }
 
+# "<cmd> aborted: required variable missing: A, B" (names deduplicated).
+_aliprehook_msg_missing() {
+  emulate -L zsh
+  local cmd=$1 v
+  shift
+  local -a names parts
+  names=(${(u)@})
+  for v in $names; do
+    (( $#parts )) && parts+=(", ")
+    parts+=("@var=$v")
+  done
+  _aliprehook_msg -n error "@command=$cmd" " aborted: required variable missing: " $parts
+}
+
 # Parse a hook's ALIPREHOOK_ENV_FILE into _aliprehook_env_<layer>.
 # Never sources the file. Returns 1 (command must not run) on any problem.
 _aliprehook_env_load() {
   emulate -L zsh -o extended_glob
   local layer=$1 cmd=$2 hook=$3 file=$4 line name value delim pat
-  local where="${hook:t}: ALIPREHOOK_ENV_FILE"
   integer n=0 closed
   local -a missing
   local -A vars
 
   [[ -s $file ]] || return 0
   if (( $(command wc -c < $file) > _aliprehook_env_max_bytes )); then
-    print -u2 "aliprehook: $where is larger than $_aliprehook_env_max_bytes bytes"
+    _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE is larger than $_aliprehook_env_max_bytes bytes"
     return 1
   fi
 
@@ -230,25 +359,25 @@ _aliprehook_env_load() {
         block+=("$line")
       done
       if (( ! closed )); then
-        print -u2 "aliprehook: $where: $name<<$delim block is not closed"
+        _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE: " "@var=$name" "<<$delim block is not closed"
         return 1
       fi
       value=${(pj:\n:)block}
     elif [[ $line == (#b)([A-Za-z_][A-Za-z0-9_]#)=(*) ]]; then
       name=$match[1] value=$match[2]
     else
-      print -u2 "aliprehook: $where: line $n: expected NAME=value"
+      _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE: line $n: expected NAME=value"
       return 1
     fi
 
     if [[ $name == ALIPREHOOK_* ]]; then
-      print -u2 "aliprehook: $where: line $n: reserved variable name: $name"
+      _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE: line $n: reserved variable name: " "@var=$name"
       return 1
     fi
     if [[ $layer == project ]]; then
       for pat in $_aliprehook_env_denylist; do
         if [[ $name == ${~pat} ]]; then
-          print -u2 "aliprehook: $where: line $n: project hooks may not set $name"
+          _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE: line $n: project hooks may not set " "@var=$name"
           return 1
         fi
       done
@@ -257,11 +386,11 @@ _aliprehook_env_load() {
   done < $file
 
   if (( ${#vars} > _aliprehook_env_max_vars )); then
-    print -u2 "aliprehook: $where: more than $_aliprehook_env_max_vars variables"
+    _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE: more than $_aliprehook_env_max_vars variables"
     return 1
   fi
   if (( $#missing )); then
-    print -u2 "aliprehook: $cmd aborted: required variable missing: ${(j:, :)${(@u)missing}}"
+    _aliprehook_msg_missing $cmd $missing
     return 1
   fi
 
@@ -283,15 +412,15 @@ _aliprehook_exec() {
   shift 4
 
   if [[ ! -f $hook ]]; then
-    print -u2 "aliprehook: $layer hook not found: $hook"
+    _aliprehook_msg error "$layer hook not found: " "@key=$hook"
     return 1
   fi
   if [[ ! -x $hook ]]; then
-    print -u2 "aliprehook: $layer hook not executable: $hook (run: chmod +x $hook)"
+    _aliprehook_msg error "$layer hook not executable: " "@key=$hook" " " "@hint=(run: chmod +x $hook)"
     return 1
   fi
   if ! envfile=$(_aliprehook_tmpfile); then
-    print -u2 "aliprehook: cannot create a temp file for $hook"
+    _aliprehook_msg error "cannot create a temp file for " "@key=$hook"
     return 1
   fi
 
@@ -306,6 +435,8 @@ _aliprehook_exec() {
       export ALIPREHOOK_PROJECT_KEY=$key ALIPREHOOK_COMMAND=$cmd ALIPREHOOK_HOOK=$hook \
         ALIPREHOOK_ENV_FILE=$envfile \
         ALIPREHOOK_ENV_PASS_BIN=$ALIPREHOOK_LIB_DIR/bin/aliprehook_env_pass \
+        ALIPREHOOK_THEME_CODES="$(_aliprehook_theme_codes)" \
+        ALIPREHOOK_COLOR=${ALIPREHOOK_COLOR:-auto} \
         PATH=$ALIPREHOOK_LIB_DIR/bin:$PATH
       exec $hook "$@"
     )
@@ -317,9 +448,9 @@ _aliprehook_exec() {
         [[ $line == '!required-missing '* ]] && missing+=(${line#* })
       done < $envfile
       if (( $#missing )); then
-        print -u2 "aliprehook: $cmd aborted: required variable missing: ${(j:, :)${(@u)missing}}"
+        _aliprehook_msg_missing $cmd $missing
       else
-        print -u2 "aliprehook: $cmd aborted: $layer hook exited $rc ($hook)"
+        _aliprehook_msg -n error "@command=$cmd" " aborted: $layer hook exited $rc (" "@key=$hook" ")"
       fi
       return $rc
     fi
@@ -336,7 +467,7 @@ aliprehook_run() {
   local cmd=$1 key hook root rel
   shift
 
-  [[ -n $cmd ]] || { print -u2 "aliprehook_run: missing command name"; return 2; }
+  [[ -n $cmd ]] || { _aliprehook_msg error "aliprehook_run: missing command name"; return 2; }
 
   key=$(aliprehook_project_key)
   _aliprehook_env_user=() _aliprehook_env_project=() _aliprehook_env=()
@@ -367,19 +498,22 @@ _aliprehook_run_project() {
   aliprehook_is_allowed $key || return 0
   local problems
   if ! problems=$(aliprehook_project_check $root); then
-    print -u2 -r -- "${(F)${(@f)problems/#/aliprehook: warning: }}"
-    print -u2 "aliprehook: warning: invalid entries ignored; fix $root/.aliprehook.yml"
+    local p
+    for p in "${(@f)problems}"; do
+      _aliprehook_msg warning "$p"
+    done
+    _aliprehook_msg warning "invalid entries ignored; fix " "@key=$root/.aliprehook.yml"
   fi
   rel=$(aliprehook_project_lookup $root $cmd) || return 0
 
   root=${root:A}
   if [[ $rel == /* ]]; then
-    print -u2 "aliprehook: project hook must be a relative path: $rel"
+    _aliprehook_msg error "project hook must be a relative path: " "@key=$rel"
     return 1
   fi
   hook=${${:-$root/$rel}:A}
   if [[ $hook != $root/* ]]; then
-    print -u2 "aliprehook: project hook outside the repo: $rel"
+    _aliprehook_msg error "project hook outside the repo: " "@key=$rel"
     return 1
   fi
   ALIPREHOOK_PROJECT_ROOT=$root _aliprehook_exec project $key $cmd $hook "$@"
@@ -430,35 +564,38 @@ aliprehook() {
     allow)
       root=$(command git rev-parse --show-toplevel 2>/dev/null)
       if [[ -z $root || ! -f $root/.aliprehook.yml ]]; then
-        print -u2 "aliprehook allow: no .aliprehook.yml in this git repo"
+        _aliprehook_msg error "allow: no " "@key=.aliprehook.yml" " in this git repo"
         return 1
       fi
       if ! line=$(aliprehook_project_check $root); then
-        print -u2 -r -- "${(F)${(@f)line/#/aliprehook allow: }}"
-        print -u2 "aliprehook allow: not allowed; fix $root/.aliprehook.yml first"
+        local p
+        for p in "${(@f)line}"; do
+          _aliprehook_msg error "allow: $p"
+        done
+        _aliprehook_msg error "allow: not allowed; fix " "@key=$root/.aliprehook.yml" " first"
         return 1
       fi
       key=$(aliprehook_project_key)
       if aliprehook_is_allowed $key; then
-        print "aliprehook: already allowed: $key"
+        _aliprehook_msg info "already allowed: " "@key=$key"
         return 0
       fi
       mkdir -p $ALIPREHOOK_HOME
       print -r -- $key >> $allowed
-      print "aliprehook: allowed $key"
-      print "  project hooks from $root/.aliprehook.yml will now run"
+      _aliprehook_msg success "@success=allowed" " " "@key=$key"
+      _aliprehook_msg info "project hooks from " "@key=$root/.aliprehook.yml" " will now run"
       ;;
     revoke)
       key=$(aliprehook_project_key)
       if ! aliprehook_is_allowed $key; then
-        print "aliprehook: not allowed: $key"
+        _aliprehook_msg info "not allowed: " "@key=$key"
         return 0
       fi
       tmp=$allowed.tmp.$$
       while IFS= read -r line; do
         [[ ${line//[[:space:]]/} == "$key" ]] || print -r -- $line
       done < $allowed > $tmp && mv $tmp $allowed
-      print "aliprehook: revoked $key"
+      _aliprehook_msg success "@success=revoked" " " "@key=$key"
       ;;
     key)
       aliprehook_project_key
@@ -470,7 +607,7 @@ aliprehook() {
       print "  key     print the project key for the current directory"
       ;;
     *)
-      print -u2 "aliprehook: unknown command: $sub (see: aliprehook help)"
+      _aliprehook_msg error "unknown command: " "@command=$sub" " " "@hint=(see: aliprehook help)"
       return 2
       ;;
   esac
@@ -490,11 +627,11 @@ aliprehook_define() {
   (( $# )) && shift
 
   if [[ -z $name || $# -eq 0 ]]; then
-    print -u2 "usage: aliprehook_define [--keep-env] <name> <command...>"
+    _aliprehook_msg error "usage: aliprehook_define [--keep-env] <name> <command...>"
     return 2
   fi
   if [[ $name != [A-Za-z_][A-Za-z0-9_-]# ]]; then
-    print -u2 "aliprehook_define: invalid name: $name"
+    _aliprehook_msg error "aliprehook_define: invalid name: " "@command=$name"
     return 2
   fi
 

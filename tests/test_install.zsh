@@ -9,6 +9,8 @@ $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "install.sh exited non-zero"
 assert_link $ALIPREHOOK_HOME/lib.zsh
 assert_link $ALIPREHOOK_HOME/README.md
 assert_link $ALIPREHOOK_HOME/bin/aliprehook_env_pass
+assert_link $ALIPREHOOK_HOME/themes/purple.theme
+assert_link $ALIPREHOOK_HOME/themes/none.theme
 assert_file $ALIPREHOOK_HOME/registry
 assert_file $ALIPREHOOK_HOME/allowed
 assert_dir  $ALIPREHOOK_HOME/hooks
@@ -33,6 +35,8 @@ $ALIPREHOOK_ROOT/install.sh --copy >/dev/null || fail "install.sh --copy exited 
 [[ ! -L $ALIPREHOOK_HOME/lib.zsh ]] || fail "--copy made a symlink"
 assert_file $ALIPREHOOK_HOME/lib.zsh
 [[ ! -L $ALIPREHOOK_HOME/bin/aliprehook_env_pass && -x $ALIPREHOOK_HOME/bin/aliprehook_env_pass ]] || fail "--copy: aliprehook_env_pass not an executable copy"
+
+[[ -f $ALIPREHOOK_HOME/themes/purple.theme && ! -L $ALIPREHOOK_HOME/themes/purple.theme ]] || fail "--copy: theme not copied"
 
 # Copy install: lib.zsh finds bin/ next to itself.
 out=$(zsh -fc "source $ALIPREHOOK_HOME/lib.zsh && print -r -- \$ALIPREHOOK_LIB_DIR" 2>&1)

@@ -17,14 +17,69 @@ hook=${ALIPREHOOK_HOOK:-hook}
 hook=${hook##*/}
 cmd=${ALIPREHOOK_COMMAND:-the command}
 
-usage() {
-  echo "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]" >&2
+# --- Output theme ---------------------------------------------------------
+# aliprehook passes its resolved theme as ALIPREHOOK_THEME_CODES ("role=code ...").
+for pair in ${ALIPREHOOK_THEME_CODES:-}; do
+  role=${pair%%=*}
+  case $role in ''|*[!a-z_]*) continue ;; esac
+  code=${pair#*=}
+  case $code in *[!0-9\;]*) continue ;; esac
+  eval "theme_$role=\$code"
+done
+
+color=0
+case ${ALIPREHOOK_COLOR:-auto} in
+  always) color=1 ;;
+  never) ;;
+  *) [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ] && [ -t 2 ] && color=1 ;;
+esac
+
+paint() {  # code text
+  if [ "$color" = 1 ] && [ -n "$1" ]; then
+    printf '\033[%sm%s\033[0m' "$1" "$2"
+  else
+    printf '%s' "$2"
+  fi
+}
+role() { eval "printf '%s' \"\${theme_$1:-}\""; }
+
+# msg <level> <part>... ; part: plain text (level color) or @role=text
+msg() {
+  level=$1
+  shift
+  tcode=$(role "$level")
+  {
+    paint "$(role brand)" aliprehook:
+    printf ' '
+    paint "${tcode:+1;$tcode}" "$level:"
+    printf ' '
+    for part do
+      case $part in
+        @*=*)
+          r=${part%%=*}
+          r=${r#@}
+          paint "$(role "$r")" "${part#*=}"
+          ;;
+        *) paint "$tcode" "$part" ;;
+      esac
+    done
+    printf '\n'
+  } >&2
 }
 
-case ${1:-} in -h|--help) usage; exit 0 ;; esac
+usage() {
+  msg error "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
+}
+
+case ${1:-} in
+  -h|--help)
+    echo "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
+    exit 0
+    ;;
+esac
 
 if [ -z "${ALIPREHOOK_ENV_FILE:-}" ] || [ ! -f "$ALIPREHOOK_ENV_FILE" ] || [ ! -w "$ALIPREHOOK_ENV_FILE" ]; then
-  echo "$prog: must be run from an aliprehook hook (ALIPREHOOK_ENV_FILE is not set)" >&2
+  msg error "@command=$prog" ": must be run from an aliprehook hook (ALIPREHOOK_ENV_FILE is not set)"
   exit 2
 fi
 
@@ -35,12 +90,12 @@ for arg do
   case $arg in
     --allow-empty) allow_empty=1 ;;
     --required|--optional) ;;
-    -*) echo "$prog: unknown option: $arg" >&2; usage; exit 2 ;;
+    -*) msg error "@command=$prog" ": unknown option: $arg"; usage; exit 2 ;;
     *)
       name=${arg%%=*}
       case $name in
-        ''|[0-9]*|*[!A-Za-z0-9_]*) echo "$prog: invalid variable name: $name" >&2; exit 2 ;;
-        ALIPREHOOK_*) echo "$prog: reserved variable name: $name" >&2; exit 2 ;;
+        ''|[0-9]*|*[!A-Za-z0-9_]*) msg error "@command=$prog" ": invalid variable name: " "@var=$name"; exit 2 ;;
+        ALIPREHOOK_*) msg error "@command=$prog" ": reserved variable name: " "@var=$name"; exit 2 ;;
       esac
       names=$((names + 1))
       ;;
@@ -94,11 +149,11 @@ for arg do
   if [ -n "$isset" ] && { [ -n "$value" ] || [ "$allow_empty" -eq 1 ]; }; then
     write_var "$name" "$value"
   elif [ "$mode" = required ]; then
-    echo "aliprehook: error: $hook: $name has no value (required)" >&2
+    msg error "@hook=$hook" ": " "@var=$name" " has no value (required)"
     printf '!required-missing %s\n' "$name" >> "$ALIPREHOOK_ENV_FILE"
     status=1
   else
-    echo "aliprehook: warning: $hook: $name has no value (unset, empty or not exported); not passed to $cmd" >&2
+    msg warning "@hook=$hook" ": " "@var=$name" " has no value (unset, empty or not exported); not passed to " "@command=$cmd"
   fi
 done
 

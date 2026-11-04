@@ -12,9 +12,9 @@ esac
 src=$(cd "$(dirname "$0")" && pwd -P)
 dest=${ALIPREHOOK_HOME:-$HOME/.config/aliprehook}
 
-mkdir -p "$dest/hooks" "$dest/bin"
+mkdir -p "$dest/hooks" "$dest/bin" "$dest/themes"
 
-for f in lib.zsh README.md bin/aliprehook_env_pass; do
+for f in lib.zsh README.md bin/aliprehook_env_pass themes/purple.theme themes/none.theme; do
   rm -f "$dest/$f"
   if [ "$mode" = link ]; then
     ln -s "$src/$f" "$dest/$f"

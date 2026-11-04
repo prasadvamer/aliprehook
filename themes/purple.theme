@@ -1,0 +1,16 @@
+# aliprehook theme: purple (default)
+#
+# role=code, where code is ANSI SGR parameters (what goes between ESC[ and m).
+# Empty code = default text color. Labels (warning:, error:) add bold.
+# Override single roles in ~/.config/aliprehook/theme.
+
+brand=1;38;5;177
+info=
+success=1;32
+warning=33
+error=31
+command=1;32
+hook=36
+key=34
+var=1
+hint=90

@@ -41,6 +41,9 @@ This creates `~/.config/aliprehook/`:
     example_echo.sh  # safe example hook
   bin/
     aliprehook_env_pass  # used by hooks to pass variables (see 8.)
+  themes/
+    purple.theme     # default colors (see 9.)
+    none.theme       # no colors
 ```
 
 ### Try it in your current shell first
@@ -315,6 +318,47 @@ services:
 
 Hooks in other languages can call `"$ALIPREHOOK_ENV_PASS_BIN" NAME=value`, or write `NAME=value` lines to `$ALIPREHOOK_ENV_FILE` themselves. Design details: [doc/04_hook-env.md](./doc/04_hook-env.md).
 
+## 9. Colors and themes
+
+aliprehook messages are colored with a purple theme. Each color has one meaning:
+
+| Color | Meaning | Example |
+|---|---|---|
+| Bold orchid | From aliprehook | `aliprehook:` |
+| Default text | Information, nothing wrong | `project hooks from … will now run` |
+| Bold green | It worked | `allowed`, `revoked` |
+| Yellow | Look, but the command continues (label and text) | `warning: … has no value` |
+| Red | Stopped, the command did not run (label and text) | `error: …`, `aborted` |
+| Bold green | The command you typed | `Dup` |
+| Cyan | A hook script | `sample_app_web_Dup.sh` |
+| Blue | Where: project key or path | `github.com/org/sample_app_web` |
+| Bold | A variable name | `API_TOKEN` |
+| Grey | How to fix it | `(run: chmod +x …)` |
+
+`warning:` and `error:` are always written out, so the meaning never depends on color.
+
+**Turn color off or on:**
+
+| Setting | Effect |
+|---|---|
+| (nothing) | Color only when output goes to a terminal |
+| `NO_COLOR=1` | No color ([no-color.org](https://no-color.org)) |
+| `ALIPREHOOK_COLOR=never` | No color |
+| `ALIPREHOOK_COLOR=always` | Always color, even in pipes (e.g. for screenshots) |
+| `ALIPREHOOK_THEME=none` | Theme with no colors |
+
+**Change colors.** Override single roles in `~/.config/aliprehook/theme` (open a new shell after editing):
+
+```text
+# ~/.config/aliprehook/theme
+hook=35      # magenta hook names
+key=1;34     # bold blue paths
+```
+
+Roles: `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`, `var`, `hint`. Values are ANSI codes (the part between `ESC[` and `m`, e.g. `31` red, `1;32` bold green, `38;5;177` 256-color); empty means default color.
+
+For a complete theme of your own, copy `themes/purple.theme`, edit it, and set `ALIPREHOOK_THEME=/path/to/my.theme`. Theme files are read as plain `role=code` lines, never executed. Design: [doc/05_theme.md](./doc/05_theme.md).
+
 ## Converting existing `.zshrc` functions
 
 **Case A — "do some prep, then one command":** move the prep into a hook, replace the function with `aliprehook_define`.
@@ -369,7 +413,7 @@ Dclear() {
 ## Uninstall
 
 ```sh
-./uninstall.sh   # removes lib.zsh, README.md, bin/; keeps registry, allowed, hooks/
+./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps registry, allowed, hooks/, theme
 ```
 
 Then remove the `source` and `aliprehook_define` lines from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.

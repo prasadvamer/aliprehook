@@ -11,15 +11,15 @@ if [ ! -d "$dest" ]; then
   exit 0
 fi
 
-for f in lib.zsh README.md bin/aliprehook_env_pass; do
+for f in lib.zsh README.md bin/aliprehook_env_pass themes/purple.theme themes/none.theme; do
   if [ -L "$dest/$f" ] || [ -f "$dest/$f" ]; then
     rm -f "$dest/$f"
     echo "removed $dest/$f"
   fi
 done
-rmdir "$dest/bin" 2>/dev/null || true
+rmdir "$dest/bin" "$dest/themes" 2>/dev/null || true
 
-for f in registry allowed hooks; do
+for f in registry allowed hooks theme; do
   [ -e "$dest/$f" ] && echo "kept    $dest/$f"
 done
 

@@ -103,7 +103,22 @@ Hooks run as child processes, so `export` in a hook never reaches the main comma
 
 **Done when:** a user hook that writes `TOKEN=…` to `$ALIPREHOOK_ENV_FILE` makes `TOKEN` visible to `docker compose up` via `Dup`, `echo $TOKEN` in the same terminal afterwards prints nothing (unless `--keep-env`), and no temp file is left behind.
 
-## Phase 6 — Dogfood
+## Phase 6 — Output theme (purple)
+
+Design and palette: [05_theme.md](./05_theme.md).
+
+- [x] `themes/purple.theme` (default) and `themes/none.theme`: `role=code` files for `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`, `var`, `hint`
+- [x] Theme loader (parse, never source): `ALIPREHOOK_THEME` name or path; `~/.config/aliprehook/theme` overrides single roles; missing roles → no color
+- [x] `_aliprehook_msg <level> …` + inline role helper in `lib.zsh`; route **every** message through it (no hard-coded colors anywhere); message text in the level's color (info: default, warning: yellow, error: red), named items (command, hook, key, var) keep their own colors
+- [x] Pass the resolved theme to hooks (`ALIPREHOOK_THEME_CODES`); `msg` helper in `bin/aliprehook_env_pass` uses it
+- [x] Color only when stderr is a TTY, `NO_COLOR` unset, `TERM` not `dumb`; `ALIPREHOOK_COLOR=auto|always|never`
+- [x] Keep `warning:` / `error:` words so meaning never depends on color; add an `error:` label to every failure message that lacks one today (`hook not found`, `hook not executable`, `project hook outside the repo`, …)
+- [x] `install.sh` / `uninstall.sh` manage `themes/`; README section on themes and turning color off
+- [x] Tests: no escape codes when not a TTY, with `NO_COLOR`, or `ALIPREHOOK_COLOR=never`; codes present with `always`; custom theme file and user override change only the listed roles; partial theme falls back to no color; same colors from `aliprehook_env_pass`; existing tests' message assertions unaffected (plain output in tests)
+
+**Done when:** with the default theme, warnings, errors and `aliprehook allow` messages show in the purple palette in a terminal, piping or `NO_COLOR=1` gives plain text, and switching to `ALIPREHOOK_THEME=none` (or editing one role in `~/.config/aliprehook/theme`) changes the output without touching any code.
+
+## Phase 7 — Dogfood
 
 - [ ] Use it daily for 2+ weeks across several repos
 - [ ] Note friction: slow shell startup, confusing errors, missing commands
@@ -111,7 +126,7 @@ Hooks run as child processes, so `export` in a hook never reaches the main comma
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 
-## Phase 7 — Public v1 (open source)
+## Phase 8 — Public v1 (open source)
 
 - [ ] `aliprehook init` (create user layer) and `aliprehook doctor` (check setup, permissions, sourcing)
 - [ ] Clear allow / revoke / explain UX, direnv-style messages when a repo has an un-allowed `.aliprehook.yml`
@@ -129,7 +144,7 @@ Hooks run as child processes, so `export` in a hook never reaches the main comma
 
 **Done when:** a fresh machine can go from install to a working hook using only the README, and changing an allowed repo's `.aliprehook.yml` or hook scripts blocks its project hooks until `aliprehook allow` is run again.
 
-## Phase 8 — Distribution
+## Phase 9 — Distribution
 
 - [ ] GitHub Releases: tagged versions + checksums
 - [ ] `curl -fsSL … | sh` install script pointing at Releases
@@ -163,14 +178,14 @@ Rule for every install path: **uninstall removes the program, never user data.**
 
 **Done when:** `brew install` and the install script both install the same tagged release, an upgrade keeps existing config working, and both uninstall paths remove the program while `~/.config/aliprehook/` stays intact.
 
-## Phase 9 — Multi-shell
+## Phase 10 — Multi-shell
 
 - [ ] bash support
 - [ ] fish support
 - [ ] Shell completions (zsh, bash, fish)
 - [ ] Optional: Oh My Zsh / fish plugin as an alternate install
 
-**Done when:** the Phase 2–3 and Phase 5 test suites pass on zsh, bash and fish.
+**Done when:** the Phase 2–3, 5 and 6 test suites pass on zsh, bash and fish.
 
 ## Later (not v1)
 

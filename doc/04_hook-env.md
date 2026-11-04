@@ -289,7 +289,7 @@ Documented in the README (§ 8. Pass variables to the command).
 
 ### 9. Other shells and languages
 
-The protocol is "append lines to a file", so hooks can be written in any language, and the same format works when bash/fish support lands (Phase 9).
+The protocol is "append lines to a file", so hooks can be written in any language, and the same format works when bash/fish support lands (Phase 10).
 
 ## Decisions
 

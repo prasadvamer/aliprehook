@@ -12,14 +12,16 @@ $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "install.sh exited non-zero"
 print 'github.com/org/sample_app_web  Dup hooks/sample_app_web_Dup.sh' >> $ALIPREHOOK_HOME/registry
 print 'github.com/org/sample_app_web' >> $ALIPREHOOK_HOME/allowed
 print 'echo hi' > $ALIPREHOOK_HOME/hooks/sample_app_web_Dup.sh
-before=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh)
+print 'hook=35' > $ALIPREHOOK_HOME/theme
+before=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh theme)
 
 # Uninstall removes managed files only.
 $ALIPREHOOK_ROOT/uninstall.sh >/dev/null 2>&1 || fail "uninstall.sh exited non-zero"
 [[ ! -e $ALIPREHOOK_HOME/lib.zsh && ! -L $ALIPREHOOK_HOME/lib.zsh ]] || fail "lib.zsh not removed"
 [[ ! -e $ALIPREHOOK_HOME/README.md && ! -L $ALIPREHOOK_HOME/README.md ]] || fail "README.md not removed"
 [[ ! -e $ALIPREHOOK_HOME/bin ]] || fail "bin/ not removed"
-after=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh)
+[[ ! -e $ALIPREHOOK_HOME/themes ]] || fail "themes/ not removed"
+after=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh theme)
 assert_eq "$before" "$after" "user data unchanged"
 
 # Second run is a no-op.
@@ -43,7 +45,7 @@ assert_eq 'source ~/.config/aliprehook/lib.zsh' "$(<$HOME/.zshrc)" ".zshrc untou
 # Reinstall after uninstall works and keeps data.
 $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "reinstall failed"
 assert_link $ALIPREHOOK_HOME/lib.zsh
-after=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh)
+after=$(cd $ALIPREHOOK_HOME && cat registry allowed hooks/sample_app_web_Dup.sh theme)
 assert_eq "$before" "$after" "user data kept across reinstall"
 
 # Unknown argument is rejected.
