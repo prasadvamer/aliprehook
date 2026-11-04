@@ -352,6 +352,25 @@ What happens when a value is missing:
 
 Full design, issues and open decisions: [04_hook-env.md](./04_hook-env.md).
 
+## Per-project commands
+
+> Planned (roadmap Phase 7). Full design: [06_commands.md](./06_commands.md).
+
+The same command name can run a **different command line per project**. You always type `Dbuild`; the line in `~/.config/aliprehook/commands` decides what runs:
+
+```text
+# project_key                     command  what runs (rest of the line, shell syntax)
+github.com/org/sample_app_web     Dbuild   DOCKER_BUILDKIT=1 REVISION=$(git rev-parse --short HEAD) docker compose -f docker-compose.dev.yml build
+github.com/org/legacy_app         Dbuild   make docker-build
+```
+
+- Which command runs: this project's line, else the `aliprehook_define` default. Exactly one runs.
+- No `*` in `commands`: the default for all other projects is the `aliprehook_define` command (a `*` line is rejected with an error).
+- Prehooks run first as usual; the line can use variables they passed.
+- The line is shell syntax (`VAR=… cmd`, `$(…)`, `&&`), run in a subshell so it cannot change your terminal.
+- Your arguments are appended, unless the line places `"$@"` itself.
+- User layer only: repos cannot define commands; a group- or world-writable `commands` file is refused.
+
 ## lib.zsh responsibilities
 
 - `aliprehook_normalize_remote <url>`
@@ -361,6 +380,7 @@ Full design, issues and open decisions: [04_hook-env.md](./04_hook-env.md).
 - `aliprehook_with_env [--keep-env] <command...>` — run a command with the variables hooks wrote to `ALIPREHOOK_ENV_FILE` (Case B functions; `aliprehook_define` wrappers declare them directly so aliases still work)
 - `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]`
 - `aliprehook allow` / `aliprehook revoke` — manage `allowed` for current project key
+- Planned: `commands` lookup for `aliprehook_define` wrappers and `aliprehook_command <name> <default...>` for Case B functions (see [06_commands.md](./06_commands.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks

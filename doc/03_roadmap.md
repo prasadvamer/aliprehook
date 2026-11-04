@@ -118,15 +118,34 @@ Design and palette: [05_theme.md](./05_theme.md).
 
 **Done when:** with the default theme, warnings, errors and `aliprehook allow` messages show in the purple palette in a terminal, piping or `NO_COLOR=1` gives plain text, and switching to `ALIPREHOOK_THEME=none` (or editing one role in `~/.config/aliprehook/theme`) changes the output without touching any code.
 
-## Phase 7 — Dogfood
+## Phase 7 — Per-project commands (`commands` file)
+
+Same command name, different command line per project (`Dbuild` → `docker compose build` in most projects, a long project-specific line in others). Design: [06_commands.md](./06_commands.md).
+
+- [ ] `~/.config/aliprehook/commands` parser: `project_key  command  rest-of-line`; `#` comments and blank lines skipped; `templates/commands` with commented examples, created by `install.sh` if missing (never overwritten, kept by `uninstall.sh`)
+- [ ] Lookup: exact project key → `aliprehook_define` default; exactly one command runs; duplicate lines → first wins + warning with file and line
+- [ ] No `*` in `commands`: a `*` line is ignored with an error (file + line) telling the user to change the `aliprehook_define` default instead
+- [ ] `aliprehook_define` wrappers: after prehooks, run the chosen line with `eval` in a subshell, with hook-passed variables set
+- [ ] Arguments: appended as `"$@"` unless the line contains `"$@"` / `$@` / `$*` itself
+- [ ] Exit code is the command's; `--keep-env` behaves as before
+- [ ] `aliprehook_command <name> <default...>` for hand-written (Case B) functions
+- [ ] User layer only: `.aliprehook.yml` `commands:` section ignored with a warning
+- [ ] Refuse a `commands` file writable by group or others (error, file ignored)
+- [ ] Messages through the theme (`@command=`, `@key=` for file paths)
+- [ ] README section; doc 01 summary marked implemented
+- [ ] Tests: exact key beats default; `*` line rejected with error and ignored; no file / no match → default; env prefix and `$(…)` work; hook-passed variable usable in the line; arguments appended; `"$@"` placement; arguments with spaces intact; `cd`/assignments in the line do not change the shell; exit code passed through; failing hook → command not run; duplicate-line warning; group-writable file refused; `.aliprehook.yml` `commands:` ignored; hook-only (`:`) command overridden per project; `aliprehook_command` in a Case B function
+
+**Done when:** `aliprehook_define Dbuild docker compose build` plus a `commands` line for `sample_app_web` makes `Dbuild` run that line there (with `DOCKER_BUILDKIT=1 REVISION=$(…)` working) and `docker compose build` in every other project, and adding or removing the line needs no change to `.zshrc`.
+
+## Phase 8 — Dogfood
 
 - [ ] Use it daily for 2+ weeks across several repos
 - [ ] Note friction: slow shell startup, confusing errors, missing commands
-- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, and why (dry run)
+- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands` line chose it), and why (dry run)
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 
-## Phase 8 — Public v1 (open source)
+## Phase 9 — Public v1 (open source)
 
 - [ ] `aliprehook init` (create user layer) and `aliprehook doctor` (check setup, permissions, sourcing)
 - [ ] Clear allow / revoke / explain UX, direnv-style messages when a repo has an un-allowed `.aliprehook.yml`
@@ -144,7 +163,7 @@ Design and palette: [05_theme.md](./05_theme.md).
 
 **Done when:** a fresh machine can go from install to a working hook using only the README, and changing an allowed repo's `.aliprehook.yml` or hook scripts blocks its project hooks until `aliprehook allow` is run again.
 
-## Phase 9 — Distribution
+## Phase 10 — Distribution
 
 - [ ] GitHub Releases: tagged versions + checksums
 - [ ] `curl -fsSL … | sh` install script pointing at Releases
@@ -178,14 +197,14 @@ Rule for every install path: **uninstall removes the program, never user data.**
 
 **Done when:** `brew install` and the install script both install the same tagged release, an upgrade keeps existing config working, and both uninstall paths remove the program while `~/.config/aliprehook/` stays intact.
 
-## Phase 10 — Multi-shell
+## Phase 11 — Multi-shell
 
 - [ ] bash support
 - [ ] fish support
 - [ ] Shell completions (zsh, bash, fish)
 - [ ] Optional: Oh My Zsh / fish plugin as an alternate install
 
-**Done when:** the Phase 2–3, 5 and 6 test suites pass on zsh, bash and fish.
+**Done when:** the Phase 2–3, 5, 6 and 7 test suites pass on zsh, bash and fish.
 
 ## Later (not v1)
 
