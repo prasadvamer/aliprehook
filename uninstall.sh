@@ -19,7 +19,7 @@ for f in lib.zsh README.md bin/aliprehook_env_pass themes/purple.theme themes/no
 done
 rmdir "$dest/bin" "$dest/themes" 2>/dev/null || true
 
-for f in registry allowed hooks theme; do
+for f in registry allowed commands hooks theme; do
   [ -e "$dest/$f" ] && echo "kept    $dest/$f"
 done
 

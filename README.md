@@ -82,10 +82,17 @@ hello and more
 ```zsh
 functions hello
 # hello () {
+#   local _aliprehook_line
+#   _aliprehook_line=$(_aliprehook_command_lookup hello)   ← this project's line in `commands`, if any (none yet)
+#   (( $? < 2 )) || return 1
 #   aliprehook_run hello "$@" || return $?   ← runs hooks for "hello" first (none yet)
 #   _aliprehook_env_decl                     ← picks up variables the hooks passed (none yet)
 #   eval "$_aliprehook_env_code"
-#   echo hello from aliprehook "$@"         ← then your command, with your arguments
+#   if [[ -n $_aliprehook_line ]]; then
+#     _aliprehook_command_eval "$_aliprehook_line" "$@"   ← per-project command (see 10.)
+#   else
+#     echo hello from aliprehook "$@"       ← else your command, with your arguments
+#   fi
 # }
 ```
 
@@ -359,6 +366,50 @@ Roles: `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`,
 
 For a complete theme of your own, copy `themes/purple.theme`, edit it, and set `ALIPREHOOK_THEME=/path/to/my.theme`. Theme files are read as plain `role=code` lines, never executed. Design: [doc/05_theme.md](./doc/05_theme.md).
 
+## 10. Per-project commands
+
+The same name can run a **different command line per project**. Keep the default in `.zshrc`:
+
+```zsh
+aliprehook_define Dbuild docker compose build
+```
+
+and list the exceptions in `~/.config/aliprehook/commands` (created by `install.sh`):
+
+```text
+# project_key                     command  what runs (rest of the line, shell syntax)
+github.com/org/sample_app_web     Dbuild   DOCKER_BUILDKIT=1 REVISION=$(git rev-parse --short HEAD) docker compose -f docker-compose.dev.yml build
+github.com/org/legacy_app         Dbuild   make docker-build
+github.com/org/sample_app_api     Test     pytest "$@" -m "not slow"
+```
+
+| Where you type `Dbuild --no-cache` | Runs |
+|---|---|
+| `sample_app_web` | `DOCKER_BUILDKIT=1 REVISION=<hash> docker compose -f docker-compose.dev.yml build --no-cache` |
+| `legacy_app` | `make docker-build --no-cache` |
+| Any other project | `docker compose build --no-cache` (the default) |
+
+- One command runs: this project's line, else the `aliprehook_define` default. Adding or removing a line needs no `.zshrc` change.
+- Prehooks still run first, and the line can use the variables they passed (`$REVISION`).
+- The line is shell syntax, run in a subshell: `cd` or assignments in it never change your terminal. The exit code is the line's.
+- Your arguments are appended, unless the line uses `"$@"` itself (`pytest "$@" -m "not slow"`).
+- No `*` key: to change the command everywhere, change the `aliprehook_define` line. A `*` line is an error and the command does not run.
+- Several lines for the same project and command: the first wins, with a warning.
+- User layer only: a repo's `.aliprehook.yml` cannot define commands (a `commands:` section is ignored with a warning).
+- The file must not be writable by group or others (`chmod go-w ~/.config/aliprehook/commands`), or the command refuses to run.
+- Works for hook-only commands too: `aliprehook_define Rpep :` can run a real command in some projects.
+
+In your own functions (Case B), use `aliprehook_command` after `aliprehook_run`; your arguments go after `--`:
+
+```zsh
+Dbuild() {
+  aliprehook_run Dbuild "$@" || return $?
+  aliprehook_command Dbuild docker compose build -- "$@"
+}
+```
+
+Design: [doc/06_commands.md](./doc/06_commands.md).
+
 ## Converting existing `.zshrc` functions
 
 **Case A — "do some prep, then one command":** move the prep into a hook, replace the function with `aliprehook_define`.
@@ -404,6 +455,7 @@ Dclear() {
 | `aliprehook_define [--keep-env] <name> <command...>` | Define an opt-in command |
 | `aliprehook_run <name> [args...]` | Run hooks for `<name>` (used inside functions) |
 | `aliprehook_with_env [--keep-env] <command...>` | Run a command with the variables the last `aliprehook_run` collected |
+| `aliprehook_command [--keep-env] <name> <default...> -- [args...]` | Like `aliprehook_with_env`, but runs this project's line from `commands` if there is one |
 | `aliprehook_env_pass [--allow-empty] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
 | `aliprehook allow` | Allow this repo's `.aliprehook.yml` hooks |
 | `aliprehook revoke` | Stop allowing them |
@@ -413,7 +465,7 @@ Dclear() {
 ## Uninstall
 
 ```sh
-./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps registry, allowed, hooks/, theme
+./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps registry, allowed, commands, hooks/, theme
 ```
 
 Then remove the `source` and `aliprehook_define` lines from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.

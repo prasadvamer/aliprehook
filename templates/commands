@@ -1,0 +1,17 @@
+# aliprehook per-project commands: run a different command line per project
+# behind the same name. Only for names defined with aliprehook_define (or
+# hand-written functions using aliprehook_command).
+#
+# Columns (whitespace-separated, then the rest of the line):
+#   project_key  command  what runs (shell syntax)
+#
+# Get the key for the current directory with: aliprehook key
+# No line for this project -> the aliprehook_define command runs (the default).
+# No `*` key here: change the default in aliprehook_define instead.
+# Your arguments are appended, unless the line uses "$@" itself.
+# Keep this file writable only by you (chmod go-w), or it is refused.
+#
+# Examples:
+# github.com/org/sample_app_web  Dbuild  DOCKER_BUILDKIT=1 REVISION=$(git rev-parse --short HEAD) docker compose -f docker-compose.dev.yml build
+# github.com/org/legacy_app      Dbuild  make docker-build
+# github.com/org/sample_app_api  Test    pytest "$@" -m "not slow"

@@ -306,6 +306,125 @@ aliprehook_project_lookup() {
   return 1
 }
 
+# Warn if <root>/.aliprehook.yml has a `commands:` section: per-project
+# command lines are shell code, so only the user's commands file may set them.
+_aliprehook_project_commands_warn() {
+  emulate -L zsh -o extended_glob
+  local root=$1 line
+  local yml=$root/.aliprehook.yml
+  [[ -r $yml ]] || return 0
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == commands:[[:space:]]#(\#*|) ]]; then
+      _aliprehook_msg warning "@key=$yml" ": commands: section ignored; per-project commands go in your own " "@key=$ALIPREHOOK_HOME/commands"
+      return 0
+    fi
+  done < $yml
+}
+
+# --- Per-project commands ---------------------------------------------------
+# ALIPREHOOK_HOME/commands: "project_key  command  rest-of-line (shell syntax)".
+# Print the line for <cmd> in the current project. Exit 0 if found, 1 if none
+# (use the default), 2 on an error (already reported; do not run anything).
+_aliprehook_command_lookup() {
+  emulate -L zsh -o extended_glob
+  local cmd=$1 key k c rest line found file=$ALIPREHOOK_HOME/commands
+  integer n=0 at=0 bad=0
+  local -a st
+
+  [[ -e $file ]] || return 1
+  if [[ ! -f $file || ! -r $file ]]; then
+    _aliprehook_msg error "cannot read " "@key=$file"
+    return 2
+  fi
+  zmodload -F zsh/stat b:zstat 2>/dev/null
+  if ! zstat -A st +mode -- $file 2>/dev/null; then
+    _aliprehook_msg error "cannot check permissions of " "@key=$file"
+    return 2
+  fi
+  if (( st[1] & 8#022 )); then
+    _aliprehook_msg error "@key=$file" " is writable by group or others; ignored " "@hint=(run: chmod go-w $file)"
+    _aliprehook_msg -n error "@command=$cmd" " aborted"
+    return 2
+  fi
+
+  key=$(aliprehook_project_key)
+  while IFS= read -r line || [[ -n $line ]]; do
+    (( n++ ))
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    [[ $line == [[:space:]]#(#b)([^[:space:]]##)[[:space:]]##([^[:space:]]##)(*) ]] || continue
+    k=$match[1] c=$match[2] rest=$match[3]
+    [[ $c == "$cmd" ]] || continue
+    rest=${${rest##[[:space:]]#}%%[[:space:]]#}
+    if [[ $k == '*' ]]; then
+      _aliprehook_msg error "@key=$file:$n" ": '*' is not allowed in commands; change the default in " "@hint=aliprehook_define $cmd …" " instead"
+      bad=1
+      continue
+    fi
+    [[ $k == "$key" ]] || continue
+    if [[ -z $rest ]]; then
+      _aliprehook_msg error "@key=$file:$n" ": no command line for " "@command=$cmd"
+      bad=1
+    elif (( at )); then
+      _aliprehook_msg warning "@key=$file:$n" ": duplicate line for " "@command=$cmd" " in this project; using line $at"
+    else
+      found=$rest at=$n
+    fi
+  done < $file
+
+  if (( bad )); then
+    _aliprehook_msg -n error "@command=$cmd" " aborted: fix " "@key=$file"
+    return 2
+  fi
+  (( at )) || return 1
+  print -r -- $found
+}
+
+# Run command line <line> in a subshell with the remaining arguments: appended
+# as "$@", unless the line uses $@ / $* itself. No emulate: the line runs with
+# your shell's options, as if typed.
+_aliprehook_command_eval() {
+  local _aliprehook_l=$1
+  shift
+  case $_aliprehook_l in
+    (*'$@'*|*'${@}'*|*'$*'*|*'${*}'*) ( eval "$_aliprehook_l" ) ;;
+    (*) ( eval "$_aliprehook_l \"\$@\"" ) ;;
+  esac
+}
+
+# For hand-written functions (README Case B), after aliprehook_run:
+#   aliprehook_command [--keep-env] <name> <default command...> -- "$@"
+# Runs this project's line from the commands file, else the default; either
+# way with the arguments after `--` and the variables the hooks passed.
+aliprehook_command() {
+  local _aliprehook_keep= _aliprehook_name _aliprehook_line
+  local -a _aliprehook_def
+  if [[ $1 == --keep-env ]]; then
+    _aliprehook_keep=--keep-env
+    shift
+  fi
+  _aliprehook_name=$1
+  (( $# )) && shift
+  while (( $# )) && [[ $1 != -- ]]; do
+    _aliprehook_def+=("$1")
+    shift
+  done
+  (( $# )) && shift
+  if [[ -z $_aliprehook_name || $#_aliprehook_def -eq 0 ]]; then
+    _aliprehook_msg error "usage: aliprehook_command [--keep-env] <name> <default command...> -- \"\$@\""
+    return 2
+  fi
+
+  _aliprehook_line=$(_aliprehook_command_lookup $_aliprehook_name)
+  (( $? < 2 )) || return 1
+  _aliprehook_env_decl $_aliprehook_keep
+  eval "$_aliprehook_env_code"
+  if [[ -n $_aliprehook_line ]]; then
+    _aliprehook_command_eval "$_aliprehook_line" "$@"
+  else
+    "${_aliprehook_def[@]}" "$@"
+  fi
+}
+
 # Create a private (0600) temp file for one hook's variables. Prints its path.
 _aliprehook_tmpfile() {
   emulate -L zsh
@@ -496,6 +615,7 @@ _aliprehook_run_project() {
   root=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
   [[ -n $root && -f $root/.aliprehook.yml ]] || return 0
   aliprehook_is_allowed $key || return 0
+  _aliprehook_project_commands_warn $root
   local problems
   if ! problems=$(aliprehook_project_check $root); then
     local p
@@ -575,6 +695,7 @@ aliprehook() {
         _aliprehook_msg error "allow: not allowed; fix " "@key=$root/.aliprehook.yml" " first"
         return 1
       fi
+      _aliprehook_project_commands_warn $root
       key=$(aliprehook_project_key)
       if aliprehook_is_allowed $key; then
         _aliprehook_msg info "already allowed: " "@key=$key"
@@ -614,8 +735,9 @@ aliprehook() {
 }
 
 # Define <name> as a shell function that runs prehooks, then <command...> "$@"
-# with the variables the hooks passed. --keep-env keeps user-layer variables
-# in the shell afterwards.
+# (or this project's line from ALIPREHOOK_HOME/commands) with the variables
+# the hooks passed. --keep-env keeps user-layer variables in the shell afterwards.
+# The commands file is checked first, so a broken one stops before any hook.
 aliprehook_define() {
   emulate -L zsh -o extended_glob
   local keep= name body
@@ -638,9 +760,16 @@ aliprehook_define() {
   # Calling the same name inside the wrapper would recurse.
   [[ $1 == $name ]] && set -- command "$@"
 
-  body="aliprehook_run ${(q)name} \"\$@\" || return \$?
+  body="local _aliprehook_line
+  _aliprehook_line=\$(_aliprehook_command_lookup ${(q)name})
+  (( \$? < 2 )) || return 1
+  aliprehook_run ${(q)name} \"\$@\" || return \$?
   _aliprehook_env_decl $keep; eval \"\$_aliprehook_env_code\"
-  ${(j: :)${(q)@}} \"\$@\""
+  if [[ -n \$_aliprehook_line ]]; then
+    _aliprehook_command_eval \"\$_aliprehook_line\" \"\$@\"
+  else
+    ${(j: :)${(q)@}} \"\$@\"
+  fi"
   unalias $name 2>/dev/null
   eval "function ${(q)name} { $body; }"
 }

@@ -24,8 +24,8 @@ for f in lib.zsh README.md bin/aliprehook_env_pass themes/purple.theme themes/no
 done
 
 # User data: create if missing, never overwrite.
-for f in registry allowed; do
-  [ -e "$dest/$f" ] || cp "$src/templates/$f" "$dest/$f"
+for f in registry allowed commands; do
+  [ -e "$dest/$f" ] || { cp "$src/templates/$f" "$dest/$f" && chmod go-w "$dest/$f"; }
 done
 [ -e "$dest/hooks/example_echo.sh" ] || cp "$src/hooks/example_echo.sh" "$dest/hooks/example_echo.sh"
 

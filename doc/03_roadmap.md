@@ -122,18 +122,18 @@ Design and palette: [05_theme.md](./05_theme.md).
 
 Same command name, different command line per project (`Dbuild` → `docker compose build` in most projects, a long project-specific line in others). Design: [06_commands.md](./06_commands.md).
 
-- [ ] `~/.config/aliprehook/commands` parser: `project_key  command  rest-of-line`; `#` comments and blank lines skipped; `templates/commands` with commented examples, created by `install.sh` if missing (never overwritten, kept by `uninstall.sh`)
-- [ ] Lookup: exact project key → `aliprehook_define` default; exactly one command runs; duplicate lines → first wins + warning with file and line
-- [ ] No `*` in `commands`: a `*` line is ignored with an error (file + line) telling the user to change the `aliprehook_define` default instead
-- [ ] `aliprehook_define` wrappers: after prehooks, run the chosen line with `eval` in a subshell, with hook-passed variables set
-- [ ] Arguments: appended as `"$@"` unless the line contains `"$@"` / `$@` / `$*` itself
-- [ ] Exit code is the command's; `--keep-env` behaves as before
-- [ ] `aliprehook_command <name> <default...>` for hand-written (Case B) functions
-- [ ] User layer only: `.aliprehook.yml` `commands:` section ignored with a warning
-- [ ] Refuse a `commands` file writable by group or others (error, file ignored)
-- [ ] Messages through the theme (`@command=`, `@key=` for file paths)
-- [ ] README section; doc 01 summary marked implemented
-- [ ] Tests: exact key beats default; `*` line rejected with error and ignored; no file / no match → default; env prefix and `$(…)` work; hook-passed variable usable in the line; arguments appended; `"$@"` placement; arguments with spaces intact; `cd`/assignments in the line do not change the shell; exit code passed through; failing hook → command not run; duplicate-line warning; group-writable file refused; `.aliprehook.yml` `commands:` ignored; hook-only (`:`) command overridden per project; `aliprehook_command` in a Case B function
+- [x] `~/.config/aliprehook/commands` parser: `project_key  command  rest-of-line`; `#` comments and blank lines skipped; `templates/commands` with commented examples, created by `install.sh` if missing (never overwritten, kept by `uninstall.sh`)
+- [x] Lookup: exact project key → `aliprehook_define` default; exactly one command runs; duplicate lines → first wins + warning with file and line
+- [x] No `*` in `commands`: a `*` line is an error (file + line) telling the user to change the `aliprehook_define` default instead; the command does not run
+- [x] `aliprehook_define` wrappers: after prehooks, run the chosen line with `eval` in a subshell, with hook-passed variables set
+- [x] Arguments: appended as `"$@"` unless the line contains `"$@"` / `$@` / `$*` itself
+- [x] Exit code is the command's; `--keep-env` behaves as before
+- [x] `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for hand-written (Case B) functions
+- [x] User layer only: `.aliprehook.yml` `commands:` section ignored with a warning
+- [x] Refuse a `commands` file writable by group or others (error, command not run); checked before any hook runs
+- [x] Messages through the theme (`@command=`, `@key=` for file paths)
+- [x] README section; doc 01 summary marked implemented
+- [x] Tests: exact key beats default; `*` line rejected with error and ignored; no file / no match → default; env prefix and `$(…)` work; hook-passed variable usable in the line; arguments appended; `"$@"` placement; arguments with spaces intact; `cd`/assignments in the line do not change the shell; exit code passed through; failing hook → command not run; duplicate-line warning; group-writable file refused; `.aliprehook.yml` `commands:` ignored; hook-only (`:`) command overridden per project; `aliprehook_command` in a Case B function
 
 **Done when:** `aliprehook_define Dbuild docker compose build` plus a `commands` line for `sample_app_web` makes `Dbuild` run that line there (with `DOCKER_BUILDKIT=1 REVISION=$(…)` working) and `docker compose build` in every other project, and adding or removing the line needs no change to `.zshrc`.
 

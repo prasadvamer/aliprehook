@@ -354,7 +354,7 @@ Full design, issues and open decisions: [04_hook-env.md](./04_hook-env.md).
 
 ## Per-project commands
 
-> Planned (roadmap Phase 7). Full design: [06_commands.md](./06_commands.md).
+> Implemented (roadmap Phase 7). Full design: [06_commands.md](./06_commands.md).
 
 The same command name can run a **different command line per project**. You always type `Dbuild`; the line in `~/.config/aliprehook/commands` decides what runs:
 
@@ -365,8 +365,8 @@ github.com/org/legacy_app         Dbuild   make docker-build
 ```
 
 - Which command runs: this project's line, else the `aliprehook_define` default. Exactly one runs.
-- No `*` in `commands`: the default for all other projects is the `aliprehook_define` command (a `*` line is rejected with an error).
-- Prehooks run first as usual; the line can use variables they passed.
+- No `*` in `commands`: the default for all other projects is the `aliprehook_define` command (a `*` line is an error and the command does not run).
+- The `commands` file is checked first (errors stop before any hook); then prehooks run as usual and the line can use variables they passed.
 - The line is shell syntax (`VAR=… cmd`, `$(…)`, `&&`), run in a subshell so it cannot change your terminal.
 - Your arguments are appended, unless the line places `"$@"` itself.
 - User layer only: repos cannot define commands; a group- or world-writable `commands` file is refused.
