@@ -171,6 +171,7 @@ aliprehook allow    # project hooks now run (after your user hook)
 aliprehook revoke   # stop running them
 ```
 
+- Each key under `hooks:` is a command name. `*` (all-projects) hooks are **not allowed** in a repo: `aliprehook allow` refuses such a file, and if one appears later the entry is ignored with a warning.
 - Hook paths must be relative and stay inside the repo (no `../`, no absolute paths, no symlinks pointing out).
 - Hook scripts must be executable (`chmod +x`, committed to git with the executable bit).
 - Project hooks run in your current directory, with `ALIPREHOOK_PROJECT_ROOT` set to the repo root.

@@ -63,7 +63,47 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 **Done when:** someone new can open `~/.config/aliprehook/README.md`, add a hook, and see `example_echo.sh` run without reading these docs.
 
-## Phase 5 — Dogfood
+## Phase 5 — Hook chaining + environment
+
+Do 5a first: 5b builds on several user hooks running in order.
+
+### 5a — Multiple user hooks + common (`*`) hook
+
+Design: [01_shell-aliprehook-system.md](./01_shell-aliprehook-system.md) § Multiple hooks and the common (`*`) hook.
+
+- [ ] Registry: `*` as project key matches every project (user `registry` only)
+- [x] Project layer rejects `*`: `aliprehook allow` refuses, an already-allowed repo gets a warning and the entry is ignored (done early, `tests/test_project_wildcard.zsh`)
+- [ ] Run **all** matching lines: `*` lines first, then exact-key lines, file order within each group (replaces "first match wins")
+- [ ] First failing hook stops later hooks, the project layer and the main command
+- [ ] Same (key, command, hook) listed twice runs once
+- [ ] Update README § User registry, `templates/registry` comment and the Phase 2 test that checks "first line wins"
+- [ ] Tests: `*` only; several `*` lines for one command in file order; `*` for `Dup` does not run for `serve`; `*` + exact key order; several exact-key lines in file order; failure in `*` hook stops the rest; `*` hook runs in a project with no other lines; path-key projects match `*`; duplicates run once
+
+**Done when:** with a `*` line and two `sample_app_web` lines for `Dup`, running `Dup` in `sample_app_web` runs all three in order and then the main command, and in any other project runs only the `*` hook.
+
+### 5b — Hook environment (`ALIPREHOOK_ENV_FILE`)
+
+Hooks run as child processes, so `export` in a hook never reaches the main command. Design and open decisions: [04_hook-env.md](./04_hook-env.md).
+
+- [ ] Decide the open items in 04 (scope A / B / C, precedence, denylist)
+- [ ] Before each hook: create a `0600` temp file (`$XDG_RUNTIME_DIR`, else `$TMPDIR`), pass its path as `ALIPREHOOK_ENV_FILE`; always delete it, also on failure / Ctrl-C
+- [ ] Parser: `NAME=value` and `NAME<<DELIM` … `DELIM`; literal values; never `source`; bad line → error with hook + line number, command does not run
+- [ ] Merge: later user hooks see earlier user hooks' variables; later (more specific) user hook wins; user beats project; project hooks do not see user-hook variables
+- [ ] Project-hook denylist (`PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `ZDOTDIR`, `IFS`, `PS4`, `PROMPT_COMMAND`, `HOME`, `SHELL`, `GIT_SSH_COMMAND`, `GIT_EXEC_PATH`); `ALIPREHOOK_*` reserved for both layers
+- [ ] Limits: 64 KiB file, 100 variables
+- [ ] `bin/aliprehook_env_pass` command (POSIX sh): `aliprehook_env_pass [--allow-empty] NAME|NAME=value... [--required NAME...] [--optional NAME...]`; reads exported variables; optional by default (warn on unset/empty/not exported); `--required` / `--optional` switch mode for the names after them; check all names and report every missing one; missing required → marker in `$ALIPREHOOK_ENV_FILE` + non-zero exit; invalid or `ALIPREHOOK_*` names rejected, newline values written as `NAME<<DELIM` blocks, error if `$ALIPREHOOK_ENV_FILE` is not set
+- [ ] After each hook: a required-missing marker aborts the main command even if the hook exited 0
+- [ ] Put aliprehook's `bin/` first on `PATH` for every hook (no load line in hooks) and set `$ALIPREHOOK_ENV_PASS_BIN` to its absolute path; `install.sh` / `uninstall.sh` manage `bin/` like `lib.zsh`
+- [ ] `aliprehook_with_env <command...>`: run the command with the collected variables via `local -x` (works for binaries, functions and aliases); clears them after use
+- [ ] `aliprehook_define` uses `aliprehook_with_env` for the main command
+- [ ] If scope C is chosen: `aliprehook_define --keep-env` (user-layer only)
+- [ ] Messages and `explain` show variable names, never values
+- [ ] README: `ALIPREHOOK_ENV_FILE` example, Case B usage, Docker Compose `environment:` note; replace the manual `source`-a-file workaround
+- [ ] Tests: `aliprehook_env_pass` with several names; `NAME=value` form; mixed forms; exported / unset / empty / not exported (warning); `--required` / `--optional` switches in both orders; several missing names reported together; missing required aborts main command even when hook exits 0; `--allow-empty` anywhere in the call; multi-line; invalid name; works from sh, bash and a non-shell hook; works when the hook resets `PATH` (via `$ALIPREHOOK_ENV_PASS_BIN`); variable reaches main command; terminal unchanged afterwards; failing hook's file ignored; malformed line stops command; multi-line value; user beats project; project hook cannot read user-hook vars; denylisted name from project hook rejected; temp file removed on success, failure and interrupt; function and alias main commands work
+
+**Done when:** a user hook that writes `TOKEN=…` to `$ALIPREHOOK_ENV_FILE` makes `TOKEN` visible to `docker compose up` via `Dup`, `echo $TOKEN` in the same terminal afterwards prints nothing (unless `--keep-env`), and no temp file is left behind.
+
+## Phase 6 — Dogfood
 
 - [ ] Use it daily for 2+ weeks across several repos
 - [ ] Note friction: slow shell startup, confusing errors, missing commands
@@ -71,7 +111,7 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 
-## Phase 6 — Public v1 (open source)
+## Phase 7 — Public v1 (open source)
 
 - [ ] `aliprehook init` (create user layer) and `aliprehook doctor` (check setup, permissions, sourcing)
 - [ ] Clear allow / revoke / explain UX, direnv-style messages when a repo has an un-allowed `.aliprehook.yml`
@@ -89,7 +129,7 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 **Done when:** a fresh machine can go from install to a working hook using only the README, and changing an allowed repo's `.aliprehook.yml` or hook scripts blocks its project hooks until `aliprehook allow` is run again.
 
-## Phase 7 — Distribution
+## Phase 8 — Distribution
 
 - [ ] GitHub Releases: tagged versions + checksums
 - [ ] `curl -fsSL … | sh` install script pointing at Releases
@@ -123,14 +163,14 @@ Rule for every install path: **uninstall removes the program, never user data.**
 
 **Done when:** `brew install` and the install script both install the same tagged release, an upgrade keeps existing config working, and both uninstall paths remove the program while `~/.config/aliprehook/` stays intact.
 
-## Phase 8 — Multi-shell
+## Phase 9 — Multi-shell
 
 - [ ] bash support
 - [ ] fish support
 - [ ] Shell completions (zsh, bash, fish)
 - [ ] Optional: Oh My Zsh / fish plugin as an alternate install
 
-**Done when:** the Phase 2–3 test suite passes on zsh, bash and fish.
+**Done when:** the Phase 2–3 and Phase 5 test suites pass on zsh, bash and fish.
 
 ## Later (not v1)
 
