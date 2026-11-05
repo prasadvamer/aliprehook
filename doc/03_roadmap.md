@@ -141,7 +141,13 @@ Same command name, different command line per project (`Dbuild` → `docker comp
 
 - [ ] Use it daily for 2+ weeks across several repos
 - [ ] Note friction: slow shell startup, confusing errors, missing commands
-- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands` line chose it), and why (dry run)
+- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands` line chose it) and why (dry run)
+
+### Improvements from dogfooding
+
+Ideas that came up while using aliprehook. Implement only when picked.
+
+- [x] `aliprehook_env_pass --hint TEXT` ([04_hook-env.md](./04_hook-env.md) § Fix hint): global option, at most once; shown as `(TEXT)` in the `hint` color after each missing **required** name's error; display only, never run; tests: hint shown for required, not for optional, twice → exit 2, placement anywhere; README + doc 04
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 

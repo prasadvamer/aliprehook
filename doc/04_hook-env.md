@@ -170,6 +170,49 @@ The marker is written only by `aliprehook_env_pass` (a reserved line that `NAME=
 
 `--allow-empty` is a **global** option for the whole call, wherever it is placed: empty values (`FOO=`) are passed instead of counting as missing.
 
+### Checking variables that are already set
+
+`--required` also works as a **prerequisite check** for variables your terminal already has (e.g. exported by an earlier `aws-login`). Nothing new is passed: the hook only checks what it inherited.
+
+```text
+terminal (AWS_* exported by an earlier login)
+   │  inherits (exported variables only)
+   ▼
+hook: aliprehook_env_pass --required AWS_ACCESS_KEY_ID …
+   │  missing → error, the command does not run
+   │  present → written to the env file (no effect: the command inherits it anyway)
+   ▼
+Dbuild runs
+```
+
+```sh
+#!/bin/sh
+# hooks/require_aws.sh   (registry: *  Dbuild  hooks/require_aws.sh)
+aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+```
+
+Nothing ever goes back to the terminal (unless `--keep-env`). This checks presence only; an expired session still passes, so add a real check (`aws sts get-caller-identity`) in the same hook if needed.
+
+Put the check in its own hook and register it with `*` (or first for the project), so it runs before slower hooks. No separate "requires" declaration is planned: hooks already run in order, can check anything (presence, validity), and `--required` covers the common case.
+
+### Fix hint: `--hint`
+
+A missing required value says *what* is missing; `--hint` says *how to fix it*:
+
+```sh
+aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SESSION_TOKEN --hint "run: aws-login"
+```
+
+```text
+aliprehook: error: require_aws.sh: AWS_ACCESS_KEY_ID has no value (required) (run: aws-login)
+aliprehook: error: require_aws.sh: AWS_SESSION_TOKEN has no value (required) (run: aws-login)
+aliprehook: Dbuild aborted: required variable missing: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN
+```
+
+- `--hint TEXT` is a **global** option for the call, wherever it is placed (like `--allow-empty`); at most once per call (twice → usage error, exit 2).
+- Shown in parentheses, in the `hint` color, after each **required** name's error. Optional names' warnings do not show it.
+- Display text only, never run. A hook needing different hints for different variables makes one call per group.
+
 ### How it works
 
 - `aliprehook_env_pass` is a small POSIX `sh` script installed in aliprehook's `bin/` (managed by `install.sh` / `uninstall.sh` like `lib.zsh`).

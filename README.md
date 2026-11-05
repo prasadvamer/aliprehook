@@ -306,6 +306,26 @@ aliprehook: Dup aborted: required variable missing: API_TOKEN
 
 A missing required value stops the main command even if the hook exits 0; no `|| exit $?` needed. `--allow-empty` (anywhere in the call) passes empty values instead of treating them as missing.
 
+**Check that the terminal already has a variable.** A hook inherits your terminal's exported variables, so `--required` also works as a prerequisite check, e.g. for credentials an earlier `aws-login` exported:
+
+```sh
+#!/bin/sh
+# hooks/require_aws.sh   (registry: *  Dbuild  hooks/require_aws.sh)
+aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+```
+
+Forgot to log in → `Dbuild aborted: required variable missing: AWS_ACCESS_KEY_ID`. This checks presence only, not whether the session expired. Register it with `*` (or first) so it runs before other hooks. Add `--hint` to say how to fix it:
+
+```sh
+aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SESSION_TOKEN --hint "run: aws-login"
+```
+
+```text
+aliprehook: error: require_aws.sh: AWS_ACCESS_KEY_ID has no value (required) (run: aws-login)
+```
+
+`--hint TEXT` can go anywhere in the call, at most once; it is shown only for missing **required** names and is never run.
+
 **Where the variables go:**
 
 - To the **main command only**. Your terminal is unchanged afterwards, unless the command was defined with `aliprehook_define --keep-env` (then your user hooks' variables stay set; project hooks' never do).
@@ -456,7 +476,7 @@ Dclear() {
 | `aliprehook_run <name> [args...]` | Run hooks for `<name>` (used inside functions) |
 | `aliprehook_with_env [--keep-env] <command...>` | Run a command with the variables the last `aliprehook_run` collected |
 | `aliprehook_command [--keep-env] <name> <default...> -- [args...]` | Like `aliprehook_with_env`, but runs this project's line from `commands` if there is one |
-| `aliprehook_env_pass [--allow-empty] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
+| `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
 | `aliprehook allow` | Allow this repo's `.aliprehook.yml` hooks |
 | `aliprehook revoke` | Stop allowing them |
 | `aliprehook key` | Print the project key for the current directory |

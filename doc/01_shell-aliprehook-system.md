@@ -378,9 +378,9 @@ github.com/org/legacy_app         Dbuild   make docker-build
 - `aliprehook_run <cmd_name>` — user hook then (if allowed) project hook
 - `aliprehook_define [--keep-env] <name> <command...>` — function wrapper around `aliprehook_run` + command
 - `aliprehook_with_env [--keep-env] <command...>` — run a command with the variables hooks wrote to `ALIPREHOOK_ENV_FILE` (Case B functions; `aliprehook_define` wrappers declare them directly so aliases still work)
-- `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]`
+- `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]` (`--hint`: see [04_hook-env.md](./04_hook-env.md) § Fix hint)
 - `aliprehook allow` / `aliprehook revoke` — manage `allowed` for current project key
-- Planned: `commands` lookup for `aliprehook_define` wrappers and `aliprehook_command <name> <default...>` for Case B functions (see [06_commands.md](./06_commands.md))
+- `commands` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks

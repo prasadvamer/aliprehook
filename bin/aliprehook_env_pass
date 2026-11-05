@@ -1,13 +1,15 @@
 #!/bin/sh
 # aliprehook_env_pass: pass variables from a hook to the main command.
 #
-#   aliprehook_env_pass [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]
+#   aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]
 #
 # NAME passes an exported variable from the hook; NAME=value sets and passes.
 # Names are optional by default (missing value: warning). --required and
 # --optional switch the mode for all names after them. A missing required
 # value makes aliprehook stop the main command after the hook finishes.
 # --allow-empty (anywhere) passes empty values instead of treating them as missing.
+# --hint TEXT (anywhere, at most once) is shown after each missing required
+# name's error, e.g. --hint "run: aws-login". Display only, never run.
 #
 # Exit: 0 ok (warnings allowed), 1 required value missing, 2 usage error.
 
@@ -68,12 +70,12 @@ msg() {
 }
 
 usage() {
-  msg error "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
+  msg error "usage: $prog [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
 }
 
 case ${1:-} in
   -h|--help)
-    echo "usage: $prog [--allow-empty] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
+    echo "usage: $prog [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME...] [--optional NAME...]"
     exit 0
     ;;
 esac
@@ -86,9 +88,27 @@ fi
 # Pass 1: validate everything before writing anything.
 allow_empty=0
 names=0
+hint=
+hint_set=0
+want_hint=0
 for arg do
+  if [ "$want_hint" -eq 1 ]; then
+    want_hint=0
+    if [ -z "$arg" ]; then
+      msg error "@command=$prog" ": --hint needs a non-empty text"; usage; exit 2
+    fi
+    hint=$arg
+    continue
+  fi
   case $arg in
     --allow-empty) allow_empty=1 ;;
+    --hint)
+      if [ "$hint_set" -eq 1 ]; then
+        msg error "@command=$prog" ": --hint given more than once"; usage; exit 2
+      fi
+      hint_set=1
+      want_hint=1
+      ;;
     --required|--optional) ;;
     -*) msg error "@command=$prog" ": unknown option: $arg"; usage; exit 2 ;;
     *)
@@ -101,6 +121,11 @@ for arg do
       ;;
   esac
 done
+if [ "$want_hint" -eq 1 ]; then
+  msg error "@command=$prog" ": --hint needs a text"
+  usage
+  exit 2
+fi
 if [ "$names" -eq 0 ]; then
   usage
   exit 2
@@ -126,9 +151,15 @@ write_var() {  # name value
 # Pass 2: pass values, report missing ones.
 mode=optional
 status=0
+skip=0
 for arg do
+  if [ "$skip" -eq 1 ]; then
+    skip=0
+    continue
+  fi
   case $arg in
     --allow-empty) continue ;;
+    --hint) skip=1; continue ;;
     --required) mode=required; continue ;;
     --optional) mode=optional; continue ;;
   esac
@@ -149,7 +180,11 @@ for arg do
   if [ -n "$isset" ] && { [ -n "$value" ] || [ "$allow_empty" -eq 1 ]; }; then
     write_var "$name" "$value"
   elif [ "$mode" = required ]; then
-    msg error "@hook=$hook" ": " "@var=$name" " has no value (required)"
+    if [ -n "$hint" ]; then
+      msg error "@hook=$hook" ": " "@var=$name" " has no value (required) " "@hint=($hint)"
+    else
+      msg error "@hook=$hook" ": " "@var=$name" " has no value (required)"
+    fi
     printf '!required-missing %s\n' "$name" >> "$ALIPREHOOK_ENV_FILE"
     status=1
   else

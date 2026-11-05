@@ -90,6 +90,29 @@ reg "$key  T  hooks/req_ok.sh"
 aliprehook_define T show R
 assert_eq "R=1" "$(T)" "required present: runs"
 
+# --- --hint: shown after required errors only, placement anywhere ---
+for args in '--hint "run: aws-login" O1 --required R1 R2' 'O1 --required R1 R2 --hint "run: aws-login"' '--required R1 --hint "run: aws-login" R2 --optional O1'; do
+  uhook hint.sh "aliprehook_env_pass $args; echo hook-rc=\$? >&2"
+  reg "$key  T  hooks/hint.sh"
+  aliprehook_define T show R1
+  out=$(T 2>$tmp/err); rc=$?
+  err=$(<$tmp/err)
+  assert_eq 1 $rc "hint ($args): exit 1"
+  assert_eq "" "$out" "hint ($args): main not run"
+  [[ $err == *"hook-rc=1"* ]] || fail "hint ($args): helper exit: '$err'"
+  for v in R1 R2; do
+    [[ $err == *"error: hint.sh: $v has no value (required) (run: aws-login)"* ]] || fail "hint ($args) for $v: '$err'"
+  done
+  [[ $err == *"O1 has no value (unset, empty or not exported); not passed to T"$'\n'* ]] || fail "hint ($args): optional warning: '$err'"
+  [[ $err == *"not passed to T ("* ]] && fail "hint ($args): shown for optional: '$err'"
+  [[ $err == *"T aborted: required variable missing: R1, R2"* ]] || fail "hint ($args): aborted: '$err'"
+done
+# Hint value is not taken as a variable name; present values still pass.
+uhook hint_ok.sh 'export R=1; aliprehook_env_pass --hint "run: x" --required R'
+reg "$key  T  hooks/hint_ok.sh"
+aliprehook_define T show R
+assert_eq "R=1" "$(T 2>&1)" "hint: present value passes, no message"
+
 # --- multi-line values ---
 uhook multi.sh 'aliprehook_env_pass M="line one
 line two" TRAIL="x
@@ -113,6 +136,14 @@ uhook resv.sh 'aliprehook_env_pass ALIPREHOOK_X=1'
 reg "$key  T  hooks/resv.sh"
 err=$(T 2>&1) && fail "reserved name accepted"
 [[ $err == *"reserved variable name: ALIPREHOOK_X"* ]] || fail "reserved message: '$err'"
+for args in '--hint a --hint b R' 'R --hint' "--hint '' R" '--hint x'; do
+  uhook badhint.sh "aliprehook_env_pass $args; echo rc=\$?"
+  reg "$key  T  hooks/badhint.sh"
+  aliprehook_define T show R
+  out=$(T 2>$tmp/err)
+  [[ $out == *"rc=2"* ]] || fail "bad --hint ($args): want exit 2, got '$out' / '$(<$tmp/err)'"
+done
+[[ $(T 2>&1) == *"usage: aliprehook_env_pass [--allow-empty] [--hint TEXT]"* ]] || fail "usage shows --hint"
 err=$(env -u ALIPREHOOK_ENV_FILE $ALIPREHOOK_ROOT/bin/aliprehook_env_pass A 2>&1); rc=$?
 assert_eq 2 $rc "outside a hook: exit 2"
 [[ $err == *"must be run from an aliprehook hook"* ]] || fail "outside hook message: '$err'"
