@@ -166,6 +166,7 @@ github.com/org/sample_app_web     serve    hooks/sample_app_web_serve.sh
 - Lines starting with `#` and blank lines are ignored.
 - **Every** matching line runs, not just the first.
 - User hooks apply to every clone with the same key.
+- No need to edit it by hand: `aliprehook hook new|add|rm|ls` (see [11. Manage hooks and commands](#11-manage-hooks-and-commands)).
 
 ### Common hooks: `*`
 
@@ -219,6 +220,16 @@ aliprehook revoke   # stop running them
 A ready-made example is in [examples/project/](./examples/project/).
 
 ## 6. Add a user hook
+
+From inside the project:
+
+```zsh
+aliprehook hook new Dup --edit   # creates hooks/<repo>_Dup.sh (executable), registers it, opens $EDITOR
+```
+
+Make sure the command is defined with `aliprehook_define` (or calls `aliprehook_run`, see below). More options: [11. Manage hooks and commands](#11-manage-hooks-and-commands).
+
+By hand, the same thing:
 
 1. Write the hook:
    ```sh
@@ -428,7 +439,44 @@ Dbuild() {
 }
 ```
 
+Set lines without editing the file: `aliprehook command set Dbuild '<command line>'` (see [11. Manage hooks and commands](#11-manage-hooks-and-commands)).
+
 Design: [doc/06_commands.md](./doc/06_commands.md).
+
+## 11. Manage hooks and commands
+
+`aliprehook hook …` and `aliprehook command …` edit `registry` and `commands` for you, for the **current project key** by default:
+
+```zsh
+aliprehook hook new Dup                     # create hooks/sample_app_web_Dup.sh from a template (executable) and register it
+aliprehook hook new Dup --hook aws_login.sh # your own file name (an existing file is reused, not overwritten)
+aliprehook hook new Dbuild --all            # every project (*): hooks/all_Dbuild.sh
+aliprehook hook add Dup aws_login.sh        # register an existing hook
+aliprehook hook rm Dup [--hook aws_login.sh] # remove the line(s); the hook file is kept
+aliprehook hook ls [Dup]                    # what runs here, in order (* lines marked)
+
+aliprehook command set Dbuild 'DOCKER_BUILDKIT=1 docker compose -f docker-compose.dev.yml build'
+aliprehook command rm Dbuild                # back to the aliprehook_define default
+aliprehook command ls
+
+aliprehook edit [registry|commands|allowed|theme]   # open the file in $EDITOR
+```
+
+**Choosing the project** (at most one):
+
+| Option | Key used | `hook` | `command` |
+|---|---|---|---|
+| (none) | Current directory's key | ✓ | ✓ |
+| `--path <dir>` | The key `<dir>` would have | ✓ | ✓ |
+| `--key <key>` | Exactly this key (e.g. a repo not cloned here) | ✓ | ✓ |
+| `--all` | `*`, every project | ✓ | ✗ (the `aliprehook_define` command is the default) |
+
+- `command set` takes the command line as **one quoted argument**, stored exactly; single quotes keep `$(…)` and `$VAR` for run time. It replaces an existing line for the project.
+- Bare hook names go in `hooks/`; other relative paths are under `~/.config/aliprehook/`. `hook add` needs an existing, executable file.
+- Comments and other lines are kept; files are rewritten safely (temp file + `mv`), keeping their permissions. Every change prints what it did.
+- Help without the README: `aliprehook help`, `aliprehook hook help`, `aliprehook command help`, and `--help` on every subcommand (`aliprehook hook new --help`).
+
+Design: [doc/07_cli-manage-hooks-and-commands.md](./doc/07_cli-manage-hooks-and-commands.md).
 
 ## Converting existing `.zshrc` functions
 
@@ -479,8 +527,11 @@ Dclear() {
 | `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
 | `aliprehook allow` | Allow this repo's `.aliprehook.yml` hooks |
 | `aliprehook revoke` | Stop allowing them |
-| `aliprehook key` | Print the project key for the current directory |
-| `aliprehook help` | Usage |
+| `aliprehook key [--path <dir>]` | Print the project key for the current directory (or `<dir>`) |
+| `aliprehook hook new\|add\|rm\|ls …` | Manage hooks in `registry` ([11](#11-manage-hooks-and-commands)) |
+| `aliprehook command set\|rm\|ls …` | Manage per-project command lines in `commands` ([11](#11-manage-hooks-and-commands)) |
+| `aliprehook edit [<file>]` | Open `registry`, `commands`, `allowed` or `theme` in `$EDITOR` |
+| `aliprehook help` | Usage (also `aliprehook hook help`, `… --help` on every subcommand) |
 
 ## Uninstall
 

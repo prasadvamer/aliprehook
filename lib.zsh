@@ -674,7 +674,706 @@ aliprehook_with_env() {
   "$@"
 }
 
-# aliprehook allow | revoke | key | help
+# --- CLI: manage registry / commands (aliprehook hook|command|edit) ---------
+# Design: doc/07_cli-manage-hooks-and-commands.md
+
+typeset -gA _aliprehook_usage
+_aliprehook_usage=(
+  'hook new'       'aliprehook hook new <cmd> [--hook <file>] [--edit] [--all | --key <key> | --path <dir>]'
+  'hook add'       'aliprehook hook add <cmd> <hook> [--all | --key <key> | --path <dir>]'
+  'hook rm'        'aliprehook hook rm <cmd> [--hook <file>] [--all | --key <key> | --path <dir>]'
+  'hook ls'        'aliprehook hook ls [<cmd>] [--all | --key <key> | --path <dir>]'
+  'command set'    "aliprehook command set <cmd> '<command line>' [--key <key> | --path <dir>]"
+  'command rm'     'aliprehook command rm <cmd> [--key <key> | --path <dir>]'
+  'command ls'     'aliprehook command ls [--key <key> | --path <dir>]'
+  'edit'           'aliprehook edit [registry|commands|allowed|theme]'
+  'key'            'aliprehook key [--path <dir>]'
+)
+
+_aliprehook_help_project() {
+  if [[ $1 == all ]]; then
+    print -r -- "  --all           every project (*)"
+  fi
+  print -r -- "  --key <key>     this project key, no lookup
+  --path <dir>    the project key of <dir>
+                  (default: the current directory's key; at most one of${1:+ --all/}--key/--path)"
+}
+
+# Print help for: (empty) | hook | command | "hook new" | … | edit | key
+_aliprehook_help() {
+  emulate -L zsh
+  local t=$1
+  case $t in
+    '')
+      print -r -- "usage: aliprehook <command> [args]
+
+  allow                 run project hooks from this repo's .aliprehook.yml
+  revoke                stop running them
+  key [--path <dir>]    print the project key (here, or for <dir>)
+  hook new|add|rm|ls    manage hooks in your registry       (aliprehook hook help)
+  command set|rm|ls     manage per-project command lines    (aliprehook command help)
+  edit [<file>]         open registry, commands, allowed or theme in \$EDITOR
+  help                  this help
+
+Every subcommand takes --help, e.g. aliprehook hook new --help"
+      ;;
+    hook)
+      print -r -- "usage: aliprehook hook <new|add|rm|ls> …   (hooks run before a command; file: registry)
+
+  $_aliprehook_usage[hook new]
+  $_aliprehook_usage[hook add]
+  $_aliprehook_usage[hook rm]
+  $_aliprehook_usage[hook ls]
+
+Project: current directory's key by default; --all = every project (*),
+--key <key> = exactly this key, --path <dir> = the key of <dir>.
+Details: aliprehook hook <sub> --help"
+      ;;
+    command)
+      print -r -- "usage: aliprehook command <set|rm|ls> …   (per-project command lines; file: commands)
+
+  $_aliprehook_usage[command set]
+  $_aliprehook_usage[command rm]
+  $_aliprehook_usage[command ls]
+
+Project: current directory's key by default; --key <key> = exactly this key,
+--path <dir> = the key of <dir>. No --all: the aliprehook_define command is the
+default for every project. Details: aliprehook command <sub> --help"
+      ;;
+    'hook new')
+      print -r -- "usage: $_aliprehook_usage[hook new]
+
+Create a hook for <cmd> from a template, make it executable and register it.
+Runs before <cmd> in the chosen project, after hooks already registered.
+
+  --hook <file>   hook file name (default: hooks/<repo>_<cmd>.sh, or all_<cmd>.sh with --all);
+                  a bare name goes in hooks/; an existing file is reused, not overwritten
+  --edit          open the hook in \$EDITOR afterwards
+$(_aliprehook_help_project all)
+
+example: aliprehook hook new Dup --hook aws_login.sh --path ~/src/sample_app_web"
+      ;;
+    'hook add')
+      print -r -- "usage: $_aliprehook_usage[hook add]
+
+Register an existing, executable hook to run before <cmd> in the chosen project,
+after hooks already registered. A bare name means hooks/<name>; other relative
+paths are under ${ALIPREHOOK_HOME/#$HOME/~}/.
+
+$(_aliprehook_help_project all)
+
+example: aliprehook hook add Dbuild aws_login.sh --all"
+      ;;
+    'hook rm')
+      print -r -- "usage: $_aliprehook_usage[hook rm]
+
+Remove the registry line(s) for <cmd> in the chosen project. The hook file is kept.
+
+  --hook <file>   only the line for this hook
+$(_aliprehook_help_project all)
+
+example: aliprehook hook rm Dup --hook aws_login.sh"
+      ;;
+    'hook ls')
+      print -r -- "usage: $_aliprehook_usage[hook ls]
+
+List the hooks that run for the chosen project, in run order (* lines first).
+With --all, only the * lines.
+
+$(_aliprehook_help_project all)
+
+example: aliprehook hook ls Dup"
+      ;;
+    'command set')
+      print -r -- "usage: $_aliprehook_usage[command set]
+
+Make <cmd> run this command line in the chosen project instead of its
+aliprehook_define default. Replaces an existing line. Quote the whole line as one
+argument; single quotes keep \$(…) and \$VAR for run time. Your arguments are
+appended when <cmd> runs, unless the line uses \"\$@\" itself.
+
+$(_aliprehook_help_project)
+No --all: change the aliprehook_define command to change the default everywhere.
+
+example: aliprehook command set Dbuild 'DOCKER_BUILDKIT=1 docker compose -f docker-compose.dev.yml build'"
+      ;;
+    'command rm')
+      print -r -- "usage: $_aliprehook_usage[command rm]
+
+Remove the chosen project's command line for <cmd>; the aliprehook_define
+default runs again.
+
+$(_aliprehook_help_project)
+
+example: aliprehook command rm Dbuild"
+      ;;
+    'command ls')
+      print -r -- "usage: $_aliprehook_usage[command ls]
+
+List the chosen project's command lines.
+
+$(_aliprehook_help_project)
+
+example: aliprehook command ls --path ~/src/sample_app_web"
+      ;;
+    edit)
+      print -r -- "usage: $_aliprehook_usage[edit]
+
+Open a file of ${ALIPREHOOK_HOME/#$HOME/~}/ in \$VISUAL / \$EDITOR (default: registry).
+
+example: aliprehook edit commands"
+      ;;
+    key)
+      print -r -- "usage: $_aliprehook_usage[key]
+
+Print the project key: normalized git remote (origin, else the first remote),
+else the directory path (pwd -P).
+
+  --path <dir>    the key <dir> would have
+
+example: aliprehook key --path ~/src/sample_app_web"
+      ;;
+  esac
+}
+
+# Report a wrong call of <topic>: error, usage line, pointer to help. Exit 2.
+_aliprehook_cli_bad() {
+  local topic=$1
+  shift
+  _aliprehook_msg error "$@"
+  [[ -n $_aliprehook_usage[$topic] ]] && print -u2 -r -- "usage: $_aliprehook_usage[$topic]"
+  _aliprehook_msg -2 info "@hint=(see: aliprehook ${topic% *} help)"
+  return 2
+}
+
+# Parse the arguments of <topic> against <spec> (space-separated option names;
+# a trailing ':' takes a value). Fills the caller's `opts` and `pos`.
+_aliprehook_cli_args() {
+  local topic=$1 spec=" $2 " a name
+  shift 2
+  while (( $# )); do
+    a=$1
+    shift
+    case $a in
+      -h|--help) opts[help]=1 ;;
+      --) pos+=("$@"); break ;;
+      --?*=*)
+        name=${${a%%=*}#--}
+        [[ $spec == *" $name: "* ]] || { _aliprehook_cli_bad $topic "unknown option: ${a%%=*}"; return 2; }
+        opts[$name]=${a#*=}
+        ;;
+      --?*)
+        name=${a#--}
+        if [[ $spec == *" $name: "* ]]; then
+          (( $# )) || { _aliprehook_cli_bad $topic "$a needs a value"; return 2; }
+          opts[$name]=$1
+          shift
+        elif [[ $spec == *" $name "* ]]; then
+          opts[$name]=1
+        else
+          _aliprehook_cli_bad $topic "unknown option: $a"
+          return 2
+        fi
+        ;;
+      -?*) _aliprehook_cli_bad $topic "unknown option: $a"; return 2 ;;
+      *) pos+=("$a") ;;
+    esac
+  done
+}
+
+# Print the project key chosen by the caller's opts (--all/--key/--path, or
+# the current directory). Exit 2 on a usage error (reported).
+_aliprehook_cli_key() {
+  emulate -L zsh -o extended_glob
+  local topic=$1 key norm
+  integer n=0
+  (( ${+opts[all]} )) && (( n++ ))
+  (( ${+opts[key]} )) && (( n++ ))
+  (( ${+opts[path]} )) && (( n++ ))
+  if (( n > 1 )); then
+    _aliprehook_cli_bad $topic "use only one of --all, --key, --path"
+    return 2
+  fi
+
+  if (( ${+opts[all]} )); then
+    print -r -- '*'
+    return 0
+  elif (( ${+opts[key]} )); then
+    key=$opts[key]
+    if [[ -z $key ]]; then
+      _aliprehook_cli_bad $topic "--key needs a non-empty key"; return 2
+    elif [[ $key == '*' ]]; then
+      _aliprehook_cli_bad $topic "--key '*' is not a project key; use --all"; return 2
+    fi
+    if [[ $key != /* ]]; then
+      norm=$(aliprehook_normalize_remote $key)
+      [[ $norm == "$key" ]] || _aliprehook_msg warning "--key " "@key=$key" " is not a normalized key (did you mean " "@key=$norm" "?); using it as given"
+    fi
+  elif (( ${+opts[path]} )); then
+    if [[ ! -d $opts[path] ]]; then
+      _aliprehook_cli_bad $topic "--path: no such directory: " "@key=$opts[path]"; return 2
+    fi
+    key=$(builtin cd -q -- $opts[path] && aliprehook_project_key) || return 2
+  else
+    key=$(aliprehook_project_key)
+  fi
+
+  if [[ $key == *[[:space:]]* ]]; then
+    _aliprehook_msg error "project key contains whitespace, cannot be stored: " "@key=$key"
+    return 2
+  fi
+  print -r -- $key
+}
+
+# Valid command name, or report a wrong call.
+_aliprehook_cli_cmdname() {
+  [[ $2 == [A-Za-z_][A-Za-z0-9_-]# ]] && return 0
+  _aliprehook_cli_bad $1 "invalid command name: " "@command=$2"
+}
+
+# Resolve a hook argument into the caller's `stored` (registry form) and
+# `abs` (file path): /abs as is, bare name → hooks/<name>, else under HOME.
+_aliprehook_cli_hookpath() {
+  local topic=$1 arg=$2
+  if [[ -z $arg || $arg == *[[:space:]]* ]]; then
+    _aliprehook_cli_bad $topic "invalid hook path (empty or with whitespace): " "@key=$arg"
+    return 2
+  fi
+  if [[ $arg == /* ]]; then
+    stored=$arg abs=$arg
+  elif [[ $arg != */* ]]; then
+    stored=hooks/$arg abs=$ALIPREHOOK_HOME/hooks/$arg
+  else
+    stored=$arg abs=$ALIPREHOOK_HOME/$arg
+  fi
+  abs=${abs:a}
+}
+
+# Absolute path of a registry hook column.
+_aliprehook_cli_abs() {
+  local h=$1
+  [[ $h == /* ]] || h=$ALIPREHOOK_HOME/$h
+  print -r -- ${h:a}
+}
+
+# Read <file> into the caller's `lines` (every line kept, including comments).
+_aliprehook_read_lines() {
+  local l
+  lines=()
+  [[ -r $1 ]] || return 0
+  while IFS= read -r l || [[ -n $l ]]; do
+    lines+=("$l")
+  done < $1
+}
+
+# Replace <file> with <line>...: temp file next to it, then mv. Symlinks are
+# followed (the target is written); an existing file keeps its permissions.
+_aliprehook_write_lines() {
+  emulate -L zsh
+  local file=${1:A} tmp
+  shift
+  tmp=$file.tmp.$$
+  command mkdir -p -- ${file:h} || return 1
+  if [[ -e $file ]]; then
+    command cp -p -- $file $tmp || return 1
+  fi
+  if (( $# )); then
+    print -rl -- "$@" >| $tmp
+  else
+    : >| $tmp
+  fi || { command rm -f -- $tmp; return 1; }
+  command mv -f -- $tmp $file
+}
+
+# Short display form of a path (~ for HOME).
+_aliprehook_tilde() { print -r -- ${1/#$HOME/\~}; }
+
+# Add "<key>  <cmd>  <stored>" to the registry unless the same hook is there.
+_aliprehook_cli_registry_add() {
+  emulate -L zsh -o extended_glob
+  local key=$1 cmd=$2 stored=$3 abs=$4 line
+  local registry=$ALIPREHOOK_HOME/registry
+  local -a lines w
+  _aliprehook_read_lines $registry
+  for line in "${lines[@]}"; do
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    w=(${=line})
+    if [[ $w[1] == "$key" && $w[2] == "$cmd" && -n $w[3] && $(_aliprehook_cli_abs $w[3]) == "$abs" ]]; then
+      _aliprehook_msg info "already registered: " "@key=$key" "  " "@command=$cmd" "  " "@hook=$w[3]"
+      return 0
+    fi
+  done
+  lines+=("$key  $cmd  $stored")
+  _aliprehook_write_lines $registry "${lines[@]}" || { _aliprehook_msg error "cannot write " "@key=$registry"; return 1; }
+  _aliprehook_msg success "@success=added" " " "@key=$key" "  " "@command=$cmd" "  " "@hook=$stored"
+}
+
+_aliprehook_hook_template() {  # key cmd
+  print -r -- "#!/bin/sh
+# aliprehook hook: runs before \`$2\` in $1.
+# A non-zero exit stops the command.
+#
+# Available:
+#   \$ALIPREHOOK_PROJECT_KEY   project key
+#   \$ALIPREHOOK_COMMAND       command name ($2)
+#   \"\$@\"                     the arguments given to the command
+#
+# Pass variables to the command (see: aliprehook_env_pass --help):
+#   aliprehook_env_pass APP_ENV=development --required API_TOKEN --hint \"run: my-login\"
+
+exit 0"
+}
+
+_aliprehook_cli_hook() {
+  emulate -L zsh -o extended_glob
+  local sub=$1 topic key stored abs line cmd
+  local -A opts
+  local -a pos lines w
+  (( $# )) && shift
+
+  case $sub in
+    ''|help|-h|--help) _aliprehook_help hook; return 0 ;;
+    new|add|rm|ls) topic="hook $sub" ;;
+    *) _aliprehook_cli_bad hook "unknown subcommand: hook $sub"; return 2 ;;
+  esac
+
+  case $sub in
+    new) _aliprehook_cli_args $topic 'hook: edit all key: path:' "$@" || return 2 ;;
+    rm)  _aliprehook_cli_args $topic 'hook: all key: path:' "$@" || return 2 ;;
+    *)   _aliprehook_cli_args $topic 'all key: path:' "$@" || return 2 ;;
+  esac
+  if (( ${+opts[help]} )); then
+    _aliprehook_help $topic
+    return 0
+  fi
+
+  case $sub in
+    new|rm) (( $#pos == 1 )) || { _aliprehook_cli_bad $topic "expected <cmd>${pos[2]:+, got extra: $pos[2,-1]}"; return 2; } ;;
+    add)    (( $#pos == 2 )) || { _aliprehook_cli_bad $topic "expected <cmd> <hook>"; return 2; } ;;
+    ls)     (( $#pos <= 1 )) || { _aliprehook_cli_bad $topic "expected at most one <cmd>"; return 2; } ;;
+  esac
+  cmd=$pos[1]
+  if [[ -n $cmd ]]; then
+    _aliprehook_cli_cmdname $topic $cmd || return 2
+  fi
+  key=$(_aliprehook_cli_key $topic) || return 2
+
+  case $sub in
+    new)
+      if (( ${+opts[hook]} )); then
+        _aliprehook_cli_hookpath $topic $opts[hook] || return 2
+      else
+        if [[ $key == '*' ]]; then
+          stored=hooks/all_$cmd.sh
+        else
+          stored=hooks/${${key:t}//[^A-Za-z0-9._-]/_}_$cmd.sh
+        fi
+        abs=$ALIPREHOOK_HOME/$stored
+      fi
+      if [[ -e $abs ]]; then
+        if [[ ! -f $abs ]]; then
+          _aliprehook_msg error "not a file: " "@key=$abs"
+          return 1
+        fi
+        if [[ ! -x $abs ]]; then
+          _aliprehook_msg error "hook not executable: " "@key=$abs" " " "@hint=(run: chmod +x $abs)"
+          return 1
+        fi
+        _aliprehook_msg info "using existing hook " "@hook=$(_aliprehook_tilde $abs)"
+      else
+        command mkdir -p -- ${abs:h} &&
+          _aliprehook_hook_template $key $cmd > $abs &&
+          command chmod +x -- $abs || { _aliprehook_msg error "cannot create " "@key=$abs"; return 1; }
+        _aliprehook_msg success "@success=created" " " "@hook=$(_aliprehook_tilde $abs)"
+      fi
+      _aliprehook_cli_registry_add $key $cmd $stored $abs || return 1
+      if (( ${+opts[edit]} )); then
+        ${=${VISUAL:-${EDITOR:-vi}}} $abs
+      fi
+      ;;
+
+    add)
+      _aliprehook_cli_hookpath $topic $pos[2] || return 2
+      if [[ ! -f $abs ]]; then
+        _aliprehook_msg error "hook not found: " "@key=$abs" " " "@hint=(create it with: aliprehook hook new $cmd --hook $pos[2])"
+        return 1
+      fi
+      if [[ ! -x $abs ]]; then
+        _aliprehook_msg error "hook not executable: " "@key=$abs" " " "@hint=(run: chmod +x $abs)"
+        return 1
+      fi
+      _aliprehook_cli_registry_add $key $cmd $stored $abs
+      ;;
+
+    rm)
+      local registry=$ALIPREHOOK_HOME/registry
+      local -a keep removed
+      if (( ${+opts[hook]} )); then
+        _aliprehook_cli_hookpath $topic $opts[hook] || return 2
+      fi
+      _aliprehook_read_lines $registry
+      for line in "${lines[@]}"; do
+        if [[ $line != [[:space:]]#(\#*|) ]]; then
+          w=(${=line})
+          if [[ $w[1] == "$key" && $w[2] == "$cmd" && -n $w[3] ]] &&
+             { [[ -z $abs ]] || [[ $(_aliprehook_cli_abs $w[3]) == "$abs" ]]; }; then
+            removed+=($w[3])
+            continue
+          fi
+        fi
+        keep+=("$line")
+      done
+      if (( ! $#removed )); then
+        local -a parts=("nothing to remove: no hook for " "@command=$cmd" " in " "@key=$key")
+        [[ -n $abs ]] && parts+=(" matching " "@hook=$stored")
+        _aliprehook_msg info "${parts[@]}"
+        return 1
+      fi
+      _aliprehook_write_lines $registry "${keep[@]}" || { _aliprehook_msg error "cannot write " "@key=$registry"; return 1; }
+      for line in $removed; do
+        _aliprehook_msg success "@success=removed" " " "@key=$key" "  " "@command=$cmd" "  " "@hook=$line"
+      done
+      ;;
+
+    ls)
+      local -a order common exact
+      local -A seen
+      local k c h id st out star gname
+      integer color=0 width=0
+      _aliprehook_read_lines $ALIPREHOOK_HOME/registry
+      for line in "${lines[@]}"; do
+        [[ $line == [[:space:]]#(\#*|) ]] && continue
+        w=(${=line})
+        k=$w[1] c=$w[2] h=$w[3]
+        [[ -n $h ]] || continue
+        [[ -z $cmd || $c == "$cmd" ]] || continue
+        if [[ $key == '*' ]]; then
+          [[ $k == '*' ]] || continue
+        else
+          [[ $k == '*' || $k == "$key" ]] || continue
+        fi
+        id="$c"$'\t'"$k"$'\t'"$h"
+        (( ${+seen[$id]} )) && continue
+        seen[$id]=1
+        (( ${order[(Ie)$c]} )) || order+=($c)
+        (( $#c > width )) && width=$#c
+        if [[ $k == '*' ]]; then
+          common+=("$c"$'\t'"$h")
+        else
+          exact+=("$c"$'\t'"$h")
+        fi
+      done
+
+      _aliprehook_theme_ensure
+      _aliprehook_color_on 1 && color=1
+      out=
+      _aliprehook_paint "${_aliprehook_theme[key]-}" "$key"
+      print -r -- $out
+      if (( ! $#order )); then
+        print -r -- "  (no hooks${cmd:+ for $cmd})"
+        return 0
+      fi
+      for c in $order; do
+        for star in 1 0; do
+          (( star )) && gname=common || gname=exact
+          for id in "${(@P)gname}"; do
+            [[ ${id%%$'\t'*} == "$c" ]] || continue
+            h=${id#*$'\t'}
+            out='  '
+            _aliprehook_paint "${_aliprehook_theme[command]-}" "${(r:width:)c}"
+            out+='  '
+            _aliprehook_paint "${_aliprehook_theme[hook]-}" "$h"
+            st=
+            (( star )) && [[ $key != '*' ]] && st='* every project'
+            abs=$(_aliprehook_cli_abs $h)
+            if [[ ! -f $abs ]]; then
+              st+=${st:+, }missing
+            elif [[ ! -x $abs ]]; then
+              st+=${st:+, }'not executable'
+            fi
+            if [[ -n $st ]]; then
+              out+='  '
+              _aliprehook_paint "${_aliprehook_theme[hint]-}" "($st)"
+            fi
+            print -r -- $out
+          done
+        done
+      done
+      ;;
+  esac
+}
+
+_aliprehook_cli_command() {
+  emulate -L zsh -o extended_glob
+  local sub=$1 topic key line cmd new old
+  local file=$ALIPREHOOK_HOME/commands
+  local -A opts
+  local -a pos lines keep
+  (( $# )) && shift
+
+  case $sub in
+    ''|help|-h|--help) _aliprehook_help command; return 0 ;;
+    set|rm|ls) topic="command $sub" ;;
+    *) _aliprehook_cli_bad command "unknown subcommand: command $sub"; return 2 ;;
+  esac
+
+  _aliprehook_cli_args $topic 'all key: path:' "$@" || return 2
+  if (( ${+opts[help]} )); then
+    _aliprehook_help $topic
+    return 0
+  fi
+  if (( ${+opts[all]} )); then
+    _aliprehook_cli_bad $topic "no --all for commands: the aliprehook_define command is already the default for every project; change it there"
+    return 2
+  fi
+
+  case $sub in
+    set)
+      if (( $#pos > 2 )); then
+        _aliprehook_cli_bad $topic "quote the command line as one argument: aliprehook command set ${pos[1]} '${pos[2,-1]}'"
+        return 2
+      fi
+      (( $#pos == 2 )) || { _aliprehook_cli_bad $topic "expected <cmd> '<command line>'"; return 2; }
+      new=$pos[2]
+      if [[ $new == *$'\n'* ]]; then
+        _aliprehook_cli_bad $topic "the command line must be one line (put longer commands in a script)"
+        return 2
+      fi
+      new=${${new##[[:space:]]#}%%[[:space:]]#}
+      [[ -n $new ]] || { _aliprehook_cli_bad $topic "empty command line"; return 2; }
+      ;;
+    rm) (( $#pos == 1 )) || { _aliprehook_cli_bad $topic "expected <cmd>"; return 2; } ;;
+    ls) (( $#pos == 0 )) || { _aliprehook_cli_bad $topic "unexpected argument: $pos[1]"; return 2; } ;;
+  esac
+  cmd=$pos[1]
+  if [[ -n $cmd ]]; then
+    _aliprehook_cli_cmdname $topic $cmd || return 2
+  fi
+  key=$(_aliprehook_cli_key $topic) || return 2
+
+  # Lines of this project and command: (#b) gives key, command, rest.
+  local pat='[[:space:]]#(#b)([^[:space:]]##)[[:space:]]##([^[:space:]]##)(*)'
+  _aliprehook_read_lines $file
+
+  case $sub in
+    set)
+      local placed=0 existed=0
+      [[ -e $file ]] && existed=1
+      for line in "${lines[@]}"; do
+        if [[ $line != [[:space:]]#(\#*|) && $line == ${~pat} && $match[1] == "$key" && $match[2] == "$cmd" ]]; then
+          if (( ! placed )); then
+            old=${${match[3]##[[:space:]]#}%%[[:space:]]#}
+            if [[ $old == "$new" ]]; then
+              _aliprehook_msg info "already set: " "@command=$cmd" " in " "@key=$key" " runs: $new"
+              return 0
+            fi
+            keep+=("$key  $cmd  $new")
+            placed=1
+          else
+            _aliprehook_msg info "removed duplicate line: $line"
+          fi
+          continue
+        fi
+        keep+=("$line")
+      done
+      (( placed )) || keep+=("$key  $cmd  $new")
+      _aliprehook_write_lines $file "${keep[@]}" || { _aliprehook_msg error "cannot write " "@key=$file"; return 1; }
+      (( existed )) || command chmod go-w -- ${file:A}
+      _aliprehook_msg success "@command=$cmd" " in " "@key=$key" " now runs: $new"
+      [[ -n $old ]] && _aliprehook_msg info "was: $old"
+      if (( ! ${+functions[$cmd]} )); then
+        _aliprehook_msg warning "@command=$cmd" " is not defined in this shell; the line runs only for commands defined with aliprehook_define (or using aliprehook_command)"
+      fi
+      ;;
+
+    rm)
+      local -a removed
+      for line in "${lines[@]}"; do
+        if [[ $line != [[:space:]]#(\#*|) && $line == ${~pat} && $match[1] == "$key" && $match[2] == "$cmd" ]]; then
+          removed+=("${${match[3]##[[:space:]]#}%%[[:space:]]#}")
+          continue
+        fi
+        keep+=("$line")
+      done
+      if (( ! $#removed )); then
+        _aliprehook_msg info "nothing to remove: no command line for " "@command=$cmd" " in " "@key=$key"
+        return 1
+      fi
+      _aliprehook_write_lines $file "${keep[@]}" || { _aliprehook_msg error "cannot write " "@key=$file"; return 1; }
+      for line in "${removed[@]}"; do
+        _aliprehook_msg success "@success=removed" " " "@command=$cmd" " in " "@key=$key" ": $line"
+      done
+      _aliprehook_msg info "@command=$cmd" " runs its aliprehook_define default here again"
+      ;;
+
+    ls)
+      local -a found
+      local out
+      integer color=0 width=0
+      for line in "${lines[@]}"; do
+        if [[ $line != [[:space:]]#(\#*|) && $line == ${~pat} && $match[1] == "$key" ]]; then
+          found+=("$match[2]"$'\t'"${${match[3]##[[:space:]]#}%%[[:space:]]#}")
+          (( $#match[2] > width )) && width=$#match[2]
+        fi
+      done
+      _aliprehook_theme_ensure
+      _aliprehook_color_on 1 && color=1
+      out=
+      _aliprehook_paint "${_aliprehook_theme[key]-}" "$key"
+      print -r -- $out
+      if (( ! $#found )); then
+        print -r -- "  (no command lines; every command runs its aliprehook_define default)"
+        return 0
+      fi
+      for line in "${found[@]}"; do
+        out='  '
+        cmd=${line%%$'\t'*}
+        _aliprehook_paint "${_aliprehook_theme[command]-}" "${(r:width:)cmd}"
+        out+="  ${line#*$'\t'}"
+        print -r -- $out
+      done
+      ;;
+  esac
+}
+
+_aliprehook_cli_edit() {
+  emulate -L zsh
+  local -A opts
+  local -a pos
+  _aliprehook_cli_args edit '' "$@" || return 2
+  if (( ${+opts[help]} )); then
+    _aliprehook_help edit
+    return 0
+  fi
+  (( $#pos <= 1 )) || { _aliprehook_cli_bad edit "expected at most one file"; return 2; }
+  local f=${pos[1]:-registry}
+  case $f in
+    registry|commands|allowed|theme) ;;
+    *) _aliprehook_cli_bad edit "unknown file: $f (registry, commands, allowed, theme)"; return 2 ;;
+  esac
+  command mkdir -p -- $ALIPREHOOK_HOME
+  ${=${VISUAL:-${EDITOR:-vi}}} $ALIPREHOOK_HOME/$f
+}
+
+_aliprehook_cli_keycmd() {
+  emulate -L zsh
+  local -A opts
+  local -a pos
+  _aliprehook_cli_args key 'path:' "$@" || return 2
+  if (( ${+opts[help]} )); then
+    _aliprehook_help key
+    return 0
+  fi
+  (( $#pos == 0 )) || { _aliprehook_cli_bad key "unexpected argument: $pos[1]"; return 2; }
+  if (( ${+opts[path]} )); then
+    [[ -d $opts[path] ]] || { _aliprehook_cli_bad key "--path: no such directory: " "@key=$opts[path]"; return 2; }
+    ( builtin cd -q -- $opts[path] && aliprehook_project_key )
+  else
+    aliprehook_project_key
+  fi
+}
+
+# aliprehook allow | revoke | key | hook | command | edit | help
 aliprehook() {
   emulate -L zsh -o extended_glob
   local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed tmp line
@@ -718,14 +1417,12 @@ aliprehook() {
       done < $allowed > $tmp && mv $tmp $allowed
       _aliprehook_msg success "@success=revoked" " " "@key=$key"
       ;;
-    key)
-      aliprehook_project_key
-      ;;
+    key) _aliprehook_cli_keycmd "$@" ;;
+    hook) _aliprehook_cli_hook "$@" ;;
+    command) _aliprehook_cli_command "$@" ;;
+    edit) _aliprehook_cli_edit "$@" ;;
     help|-h|--help|'')
-      print "usage: aliprehook <allow|revoke|key|help>"
-      print "  allow   run project hooks from this repo's .aliprehook.yml"
-      print "  revoke  stop running them"
-      print "  key     print the project key for the current directory"
+      _aliprehook_help
       ;;
     *)
       _aliprehook_msg error "unknown command: " "@command=$sub" " " "@hint=(see: aliprehook help)"

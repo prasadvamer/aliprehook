@@ -148,6 +148,16 @@ Same command name, different command line per project (`Dbuild` → `docker comp
 Ideas that came up while using aliprehook. Implement only when picked.
 
 - [x] `aliprehook_env_pass --hint TEXT` ([04_hook-env.md](./04_hook-env.md) § Fix hint): global option, at most once; shown as `(TEXT)` in the `hint` color after each missing **required** name's error; display only, never run; tests: hint shown for required, not for optional, twice → exit 2, placement anywhere; README + doc 04
+- [x] Manage `registry` / `commands` from the CLI ([07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md)), always for the current project key:
+  - Required values positional, optional ones as `--` options
+  - `aliprehook hook new <cmd> [--hook <file>] [--edit]`: hook from a template, `chmod +x`, registry line; default file `hooks/<repo>_<cmd>.sh` / `all_<cmd>.sh`; existing file reused
+  - `aliprehook hook add <cmd> <hook>`, `hook rm <cmd> [--hook <file>]`, `hook ls [<cmd>]` (run order, `*` marked); hook must exist and be executable; duplicate add → no change
+  - Choosing the project: `--all` (hooks only), `--key <key>`, `--path <dir>`; at most one; `aliprehook key --path <dir>`
+  - Help: `aliprehook help`, `aliprehook hook help` / `command help`, `--help` on every subcommand; wrong calls print the usage line and exit 2
+  - `aliprehook command set <cmd> '<line>'` (one quoted argument, replaces), `command rm <cmd>`, `command ls`; `--key` / `--path` accepted, `*` / `--all` rejected
+  - `aliprehook edit [registry|commands|allowed|theme]` opens `$EDITOR`
+  - Keep comments and other lines; temp file + `mv`; keep permissions; never touch `.aliprehook.yml`; every change prints what it did
+  - `aliprehook help` and README updated; tests for each subcommand, `--key` / `--path` / `--all` and conflicts, help output, duplicates, missing/non-executable hook, quoting kept exactly, `set` replaces, comments preserved, permissions kept, outside a git repo
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 

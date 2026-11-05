@@ -381,6 +381,7 @@ github.com/org/legacy_app         Dbuild   make docker-build
 - `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]` (`--hint`: see [04_hook-env.md](./04_hook-env.md) § Fix hint)
 - `aliprehook allow` / `aliprehook revoke` — manage `allowed` for current project key
 - `commands` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
+- `aliprehook hook new|add|rm|ls`, `aliprehook command set|rm|ls`, `aliprehook edit`, `aliprehook key [--path]` — manage `registry` / `commands` for the current project key without hand-written lines (see [07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks
