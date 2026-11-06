@@ -9,12 +9,12 @@ mkdir -p $HOME
 $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "install.sh exited non-zero"
 
 # User data to protect.
-print 'github.com/org/sample_app_web  Dup hooks/sample_app_web_Dup.sh' >> $ALIPREHOOK_HOME/registry
-print 'github.com/org/sample_app_web' >> $ALIPREHOOK_HOME/allowed
+print 'github.com/org/sample_app_web  Dup hooks/sample_app_web_Dup.sh' >> $ALIPREHOOK_HOME/hooks.map
+print 'github.com/org/sample_app_web' >> $ALIPREHOOK_HOME/allowed-repos
 print 'echo hi' > $ALIPREHOOK_HOME/hooks/sample_app_web_Dup.sh
-print 'hook=35' > $ALIPREHOOK_HOME/theme
-print 'github.com/org/sample_app_web  Dbuild  make build' >> $ALIPREHOOK_HOME/commands
-before=$(cd $ALIPREHOOK_HOME && cat registry allowed commands hooks/sample_app_web_Dup.sh theme)
+print 'hook=35' > $ALIPREHOOK_HOME/theme-overrides
+print 'github.com/org/sample_app_web  Dbuild  make build' >> $ALIPREHOOK_HOME/commands.map
+before=$(cd $ALIPREHOOK_HOME && cat hooks.map allowed-repos commands.map hooks/sample_app_web_Dup.sh theme-overrides)
 
 # Uninstall removes managed files only.
 $ALIPREHOOK_ROOT/uninstall.sh >/dev/null 2>&1 || fail "uninstall.sh exited non-zero"
@@ -22,7 +22,7 @@ $ALIPREHOOK_ROOT/uninstall.sh >/dev/null 2>&1 || fail "uninstall.sh exited non-z
 [[ ! -e $ALIPREHOOK_HOME/README.md && ! -L $ALIPREHOOK_HOME/README.md ]] || fail "README.md not removed"
 [[ ! -e $ALIPREHOOK_HOME/bin ]] || fail "bin/ not removed"
 [[ ! -e $ALIPREHOOK_HOME/themes ]] || fail "themes/ not removed"
-after=$(cd $ALIPREHOOK_HOME && cat registry allowed commands hooks/sample_app_web_Dup.sh theme)
+after=$(cd $ALIPREHOOK_HOME && cat hooks.map allowed-repos commands.map hooks/sample_app_web_Dup.sh theme-overrides)
 assert_eq "$before" "$after" "user data unchanged"
 
 # Second run is a no-op.
@@ -46,7 +46,7 @@ assert_eq 'source ~/.config/aliprehook/lib.zsh' "$(<$HOME/.zshrc)" ".zshrc untou
 # Reinstall after uninstall works and keeps data.
 $ALIPREHOOK_ROOT/install.sh >/dev/null || fail "reinstall failed"
 assert_link $ALIPREHOOK_HOME/lib.zsh
-after=$(cd $ALIPREHOOK_HOME && cat registry allowed commands hooks/sample_app_web_Dup.sh theme)
+after=$(cd $ALIPREHOOK_HOME && cat hooks.map allowed-repos commands.map hooks/sample_app_web_Dup.sh theme-overrides)
 assert_eq "$before" "$after" "user data kept across reinstall"
 
 # Unknown argument is rejected.

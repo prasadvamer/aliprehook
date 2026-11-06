@@ -8,8 +8,8 @@ trap 'rm -rf $tmp' EXIT
 tmp=${tmp:A}
 ALIPREHOOK_HOME=$tmp/home
 mkdir -p $ALIPREHOOK_HOME/hooks
-cp $ALIPREHOOK_ROOT/templates/allowed $ALIPREHOOK_HOME/allowed
-: > $ALIPREHOOK_HOME/registry
+cp $ALIPREHOOK_ROOT/templates/allowed-repos $ALIPREHOOK_HOME/allowed-repos
+: > $ALIPREHOOK_HOME/hooks.map
 
 repo=$tmp/repo
 key=github.com/org/sample_app_web
@@ -19,8 +19,8 @@ other=$tmp/other
 mkdir -p $other
 cd $repo
 
-cmds() { print -rl -- "$@" > $ALIPREHOOK_HOME/commands; chmod 600 $ALIPREHOOK_HOME/commands; }
-reg() { print -rl -- "$@" > $ALIPREHOOK_HOME/registry; }
+cmds() { print -rl -- "$@" > $ALIPREHOOK_HOME/commands.map; chmod 600 $ALIPREHOOK_HOME/commands.map; }
+reg() { print -rl -- "$@" > $ALIPREHOOK_HOME/hooks.map; }
 uhook() {  # name body (sh)
   print -r -- "#!/bin/sh
 $2" > $ALIPREHOOK_HOME/hooks/$1
@@ -98,7 +98,7 @@ reg
 cmds "$key  B  echo first" "$key  B  echo second"
 out=$(B 2>$tmp/err)
 assert_eq "first" "$out" "duplicate: first wins"
-[[ $(<$tmp/err) == *"warning: $ALIPREHOOK_HOME/commands:2: duplicate line for B in this project; using line 1"* ]] || fail "duplicate warning: '$(<$tmp/err)'"
+[[ $(<$tmp/err) == *"warning: $ALIPREHOOK_HOME/commands.map:2: duplicate line for B in this project; using line 1"* ]] || fail "duplicate warning: '$(<$tmp/err)'"
 
 # --- `*` line: error, nothing runs (not even hooks) ---
 uhook mark.sh "touch $tmp/hook-ran"
@@ -109,8 +109,8 @@ assert_eq 1 $rc "* line: non-zero"
 assert_eq "" "$out" "* line: nothing runs"
 [[ ! -e $tmp/hook-ran ]] || fail "* line: hook ran"
 err=$(<$tmp/err)
-[[ $err == *"error: $ALIPREHOOK_HOME/commands:1: '*' is not allowed in commands; change the default in aliprehook_define B … instead"* ]] || fail "* error: '$err'"
-[[ $err == *"B aborted: fix $ALIPREHOOK_HOME/commands"* ]] || fail "* aborted: '$err'"
+[[ $err == *"error: $ALIPREHOOK_HOME/commands.map:1: '*' is not allowed in commands; change the default in aliprehook_define B … instead"* ]] || fail "* error: '$err'"
+[[ $err == *"B aborted: fix $ALIPREHOOK_HOME/commands.map"* ]] || fail "* aborted: '$err'"
 # A `*` line for another command does not affect B.
 cmds "*  Other  echo star"
 assert_eq "default" "$(B 2>/dev/null)" "* for other command ignored"
@@ -120,18 +120,18 @@ reg
 cmds "$key  B"
 out=$(B 2>$tmp/err); rc=$?
 assert_eq 1 $rc "empty line: non-zero"
-[[ $(<$tmp/err) == *"error: $ALIPREHOOK_HOME/commands:1: no command line for B"* ]] || fail "empty error: '$(<$tmp/err)'"
+[[ $(<$tmp/err) == *"error: $ALIPREHOOK_HOME/commands.map:1: no command line for B"* ]] || fail "empty error: '$(<$tmp/err)'"
 
 # --- group- or world-writable file refused ---
 for m in 620 602; do
   cmds "$key  B  echo line"
-  chmod $m $ALIPREHOOK_HOME/commands
+  chmod $m $ALIPREHOOK_HOME/commands.map
   out=$(B 2>$tmp/err); rc=$?
   assert_eq 1 $rc "mode $m: refused"
   assert_eq "" "$out" "mode $m: nothing runs"
-  [[ $(<$tmp/err) == *"is writable by group or others; ignored (run: chmod go-w $ALIPREHOOK_HOME/commands)"* ]] || fail "mode $m error: '$(<$tmp/err)'"
+  [[ $(<$tmp/err) == *"is writable by group or others; ignored (run: chmod go-w $ALIPREHOOK_HOME/commands.map)"* ]] || fail "mode $m error: '$(<$tmp/err)'"
 done
-chmod 644 $ALIPREHOOK_HOME/commands
+chmod 644 $ALIPREHOOK_HOME/commands.map
 assert_eq "line" "$(B)" "mode 644 accepted"
 
 # --- hook-only command overridden per project ---
@@ -160,7 +160,7 @@ hooks:
 commands:
   B: rm -rf /
 YML
-: > $ALIPREHOOK_HOME/commands
+: > $ALIPREHOOK_HOME/commands.map
 aliprehook allow >/dev/null 2>$tmp/err || fail "allow failed"
 [[ $(<$tmp/err) == *"warning: $repo/.aliprehook.yml: commands: section ignored"* ]] || fail "allow warning: '$(<$tmp/err)'"
 out=$(B 2>$tmp/err)

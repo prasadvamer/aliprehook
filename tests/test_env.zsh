@@ -9,7 +9,7 @@ tmp=${tmp:A}
 ALIPREHOOK_HOME=$tmp/home
 mkdir -p $ALIPREHOOK_HOME/hooks $tmp/rt
 export XDG_RUNTIME_DIR=$tmp/rt   # temp files land here, so leftovers can be checked
-cp $ALIPREHOOK_ROOT/templates/allowed $ALIPREHOOK_HOME/allowed
+cp $ALIPREHOOK_ROOT/templates/allowed-repos $ALIPREHOOK_HOME/allowed-repos
 
 repo=$tmp/repo
 key=github.com/org/sample_app_web
@@ -22,7 +22,7 @@ uhook() {  # name body (sh)
 $2" > $ALIPREHOOK_HOME/hooks/$1
   chmod +x $ALIPREHOOK_HOME/hooks/$1
 }
-reg() { print -rl -- "$@" > $ALIPREHOOK_HOME/registry; }
+reg() { print -rl -- "$@" > $ALIPREHOOK_HOME/hooks.map; }
 
 # Main command: print selected variables.
 show() { local v; for v in "$@"; do print -r -- "$v=${(P)v-<unset>}"; done; }

@@ -1,4 +1,4 @@
-# Per-project commands (`commands` file)
+# Per-project commands (`commands.map` file)
 
 Design for running a **different command per project** behind the same name. You always type `Dbuild`; what runs depends on the project key. Summary in [01_shell-aliprehook-system.md](./01_shell-aliprehook-system.md) § Per-project commands; work items in [03_roadmap.md](./03_roadmap.md) Phase 7.
 
@@ -16,9 +16,9 @@ legacy_app:        make docker-build
 
 Inserting arguments at a position (`@ARGS`) depends too much on each tool's argument order, so it was rejected. Instead, a project can **replace the whole command line**.
 
-## The `commands` file
+## The `commands.map` file
 
-`~/.config/aliprehook/commands`, next to `registry`:
+`~/.config/aliprehook/commands.map`, next to `hooks.map`:
 
 ```text
 # project_key                     command  what runs (rest of the line, shell syntax)
@@ -53,9 +53,9 @@ For `Dbuild` in project `K`, the first of these that exists:
 
 ### No `*` here
 
-Unlike `registry`, `commands` has no `*` key. Hooks add up (every match runs), so a `*` hook means something extra. A command is replaced (only one runs), so a `*` command would just be a second place for the default, which `aliprehook_define` already is. One default, in one place.
+Unlike `hooks.map`, `commands.map` has no `*` key. Hooks add up (every match runs), so a `*` hook means something extra. A command is replaced (only one runs), so a `*` command would just be a second place for the default, which `aliprehook_define` already is. One default, in one place.
 
-A `*` line in `commands` is an error: aliprehook prints the file and line, says to change the `aliprehook_define` command instead, and that command does not run until the line is removed. A `*` line for another command does not affect it.
+A `*` line in `commands.map` is an error: aliprehook prints the file and line, says to change the `aliprehook_define` command instead, and that command does not run until the line is removed. A `*` line for another command does not affect it.
 
 | Where you type `Dbuild --no-cache` | Runs |
 |---|---|
@@ -65,7 +65,7 @@ A `*` line in `commands` is an error: aliprehook prints the file and line, says 
 
 ## How it runs
 
-1. aliprehook looks up the command (table above). The `commands` file is checked first, so a broken or refused file stops before any hook runs.
+1. aliprehook looks up the command (table above). The `commands.map` file is checked first, so a broken or refused file stops before any hook runs.
 2. Prehooks run, exactly as before (`*` hooks, project hooks, project layer). A failing hook stops everything; the command does not run.
 3. The command line runs in a **subshell** with `eval`:
    - Shell syntax works: `VAR=… cmd`, `$(…)`, `&&`, `|`, quotes.
@@ -79,16 +79,16 @@ A `*` line in `commands` is an error: aliprehook prints the file and line, says 
 
 ## Rules and safety
 
-- **User layer only.** A command line is shell code, more powerful than a hook, so only the user's `commands` file can define one. A repo's `.aliprehook.yml` cannot (a `commands:` section there is ignored with a warning).
-- **File permissions:** if `commands` is writable by group or others, aliprehook refuses it with an error and the command does not run, so another user cannot change what your commands run. `install.sh` creates it with `chmod go-w`.
-- **Only for `aliprehook_define` commands.** A line for a name that is not defined does nothing (`aliprehook doctor` reports it). Hand-written Case B functions can opt in with a helper, after `aliprehook_run`: `aliprehook_command Dbuild docker compose build -- "$@"` (runs the `commands` line if there is one, else the given default; your arguments come after the first `--`, so the default itself cannot contain `--`). Like `aliprehook_with_env`, it sets the variables the hooks passed and accepts `--keep-env`.
+- **User layer only.** A command line is shell code, more powerful than a hook, so only the user's `commands.map` file can define one. A repo's `.aliprehook.yml` cannot (a `commands:` section there is ignored with a warning).
+- **File permissions:** if `commands.map` is writable by group or others, aliprehook refuses it with an error and the command does not run, so another user cannot change what your commands run. `install.sh` creates it with `chmod go-w`.
+- **Only for `aliprehook_define` commands.** A line for a name that is not defined does nothing (`aliprehook doctor` reports it). Hand-written Case B functions can opt in with a helper, after `aliprehook_run`: `aliprehook_command Dbuild docker compose build -- "$@"` (runs the `commands.map` line if there is one, else the given default; your arguments come after the first `--`, so the default itself cannot contain `--`). Like `aliprehook_with_env`, it sets the variables the hooks passed and accepts `--keep-env`.
 - **Hook-only commands** (`aliprehook_define X :`) can get a real command in some projects.
 - **Visibility:** `aliprehook explain Dbuild` (Phase 8) prints which command will run here and which line chose it.
 - Errors (`*` line, empty command part, unreadable or refused file) name the file and line; the command does not run. Problems in lines for other commands are not reported.
 
 ## Examples
 
-Different default plus one exception: change the default in `aliprehook_define`, keep the exception in `commands`:
+Different default plus one exception: change the default in `aliprehook_define`, keep the exception in `commands.map`:
 
 ```zsh
 aliprehook_define Dup docker compose up --remove-orphans

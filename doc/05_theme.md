@@ -17,7 +17,7 @@ Every color has **one meaning**. Purple marks aliprehook itself; status uses the
 |---|---|---|---|---|
 | `brand` | "This message is from aliprehook" | `aliprehook:` | Orchid, bold | `1;38;5;177` |
 | `info` | Text of informational messages, nothing wrong | `project hooks from … will now run` | Default text color | (empty) |
-| `success` | It worked | `allowed`, `revoked` | Green, bold (robbyrussell success `➜`) | `1;32` |
+| `success` | It worked | `allowed-repos`, `revoked` | Green, bold (robbyrussell success `➜`) | `1;32` |
 | `warning` | Look, but the command continues | `warning:` and the warning's text | Yellow (robbyrussell dirty `✗`) | `33` |
 | `error` | Stopped; the command did not run | `error:`, `aborted` and the error's text | Red (robbyrussell failure `➜`) | `31` |
 | `command` | The command you typed | `Dup` | Green, bold (same as `success`) | `1;32` |
@@ -74,7 +74,7 @@ Choosing a theme:
 |---|---|
 | `ALIPREHOOK_THEME=purple` | Shipped theme by name (default) |
 | `ALIPREHOOK_THEME=/path/to/my.theme` | Your own file |
-| `~/.config/aliprehook/theme` | User overrides on top of the chosen theme (only the roles listed) |
+| `~/.config/aliprehook/theme-overrides` | User overrides on top of the chosen theme (only the roles listed) |
 
 A new `ALIPREHOOK_THEME` value takes effect on the next message; edits to theme files take effect in a new shell (or after `source ~/.zshrc`).
 

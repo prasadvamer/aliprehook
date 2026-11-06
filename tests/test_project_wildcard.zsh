@@ -8,7 +8,7 @@ trap 'rm -rf $tmp' EXIT
 tmp=${tmp:A}
 ALIPREHOOK_HOME=$tmp/home
 mkdir -p $ALIPREHOOK_HOME
-cp $ALIPREHOOK_ROOT/templates/allowed $ALIPREHOOK_HOME/allowed
+cp $ALIPREHOOK_ROOT/templates/allowed-repos $ALIPREHOOK_HOME/allowed-repos
 
 log=$tmp/log
 reset() { : > $log; }
@@ -37,7 +37,7 @@ for star in '*' '"*"' "'*'"; do
   $star: .aliprehook/all.sh" > .aliprehook.yml
   err=$(aliprehook allow 2>&1); rc=$?
   assert_eq 1 $rc "allow with $star: refused"
-  [[ $err == *".aliprehook.yml:3:"*"'*' hooks are not allowed in a repo"*"registry"* ]] || fail "allow with $star: message '$err'"
+  [[ $err == *".aliprehook.yml:3:"*"'*' hooks are not allowed in a repo"*"hooks.map"* ]] || fail "allow with $star: message '$err'"
   aliprehook_is_allowed github.com/org/sample_app_web && fail "allow with $star: key recorded"
 done
 

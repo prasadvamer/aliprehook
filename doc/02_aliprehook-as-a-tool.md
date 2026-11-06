@@ -51,7 +51,7 @@ Product UX still needs:
 - `aliprehook init`, `aliprehook doctor`
 - Support beyond zsh (bash, fish at minimum)
 - Shell completions
-- Versioned upgrades that do not silently break registries / `allowed`
+- Versioned upgrades that do not silently break registries / `allowed-repos`
 
 #### Distribution decision (locked in)
 

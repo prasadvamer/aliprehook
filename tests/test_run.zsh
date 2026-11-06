@@ -25,7 +25,7 @@ hook ok2.sh 0
 hook fail.sh 3
 print '#!/bin/sh' > $ALIPREHOOK_HOME/hooks/noexec.sh
 
-cat > $ALIPREHOOK_HOME/registry <<REG
+cat > $ALIPREHOOK_HOME/hooks.map <<REG
 # comment line
    # indented comment
 
@@ -78,11 +78,11 @@ assert_eq "hook:${tmp}/other:Dup:" "$(logged)" "path-key match"
 
 # No registry at all.
 cd $tmp/repo
-mv $ALIPREHOOK_HOME/registry $tmp/registry.bak
+mv $ALIPREHOOK_HOME/hooks.map $tmp/registry.bak
 reset; aliprehook_run Dup; rc=$?
 assert_eq 0 $rc "no registry: exit 0"
 assert_eq "" "$(logged)" "no registry: no hook"
-mv $tmp/registry.bak $ALIPREHOOK_HOME/registry
+mv $tmp/registry.bak $ALIPREHOOK_HOME/hooks.map
 
 # --- aliprehook_define ---
 

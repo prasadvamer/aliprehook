@@ -11,14 +11,14 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 - [x] `install.sh` (dev only) that copies/symlinks into `~/.config/aliprehook/`
 - [x] `uninstall.sh` (dev only), the reverse of `install.sh`:
   - Removes only what `install.sh` manages: `lib.zsh` and `README.md` (symlink or copy)
-  - **Never** removes user data: `registry`, `allowed`, `hooks/`
+  - **Never** removes user data: `hooks.map`, `allowed-repos`, `hooks/`
   - Respects `ALIPREHOOK_HOME`, same as `install.sh`
   - Safe to run twice; no error if already uninstalled
   - Warns if `~/.zshrc` still sources `lib.zsh` (does not edit `~/.zshrc`)
   - Prints what was kept and the manual full-removal command (`rm -rf ~/.config/aliprehook`)
 - [x] `tests/test_uninstall.zsh`: managed files removed, user data untouched, second run is a no-op, reinstall after uninstall works
 
-**Done when:** `install.sh` creates `~/.config/aliprehook/{README.md,lib.zsh,registry,allowed,hooks/}`, `source ~/.config/aliprehook/lib.zsh` loads with no errors, and `uninstall.sh` removes `lib.zsh` + `README.md` while `registry`, `allowed` and `hooks/` stay exactly as they were.
+**Done when:** `install.sh` creates `~/.config/aliprehook/{README.md,lib.zsh,hooks.map,allowed-repos,hooks/}`, `source ~/.config/aliprehook/lib.zsh` loads with no errors, and `uninstall.sh` removes `lib.zsh` + `README.md` while `hooks.map`, `allowed-repos` and `hooks/` stay exactly as they were.
 
 ## Phase 1 — Project key resolution
 
@@ -34,18 +34,18 @@ Each phase ends with a **Done when** check. Do not start the next phase until it
 
 ## Phase 2 — User layer (MVP)
 
-- [x] `registry` parser: three whitespace-separated columns, skip blank lines and `#` comments
+- [x] `hooks.map` parser: three whitespace-separated columns, skip blank lines and `#` comments
 - [x] `aliprehook_run <cmd_name>`: look up `(key, cmd)` → run hook; non-zero exit aborts
 - [x] `aliprehook_define <name> <command...>`: creates the wrapper function from 01
 - [x] `hooks/example_echo.sh` (safe: prints that aliprehook ran, key, command; exit 0)
-- [x] `registry` ships with a commented example line pointing at `example_echo.sh`
+- [x] `hooks.map` ships with a commented example line pointing at `example_echo.sh`
 - [x] Tests: match, no match, failing hook stops the main command, args pass through via `"$@"`
 
 **Done when:** `aliprehook_define Dup docker compose up` in `~/.zshrc` runs the user hook in a registered repo and plain `docker compose up` everywhere else.
 
 ## Phase 3 — Project layer + allow gate
 
-- [x] `allowed` file: one normalized key per line
+- [x] `allowed-repos` file: one normalized key per line
 - [x] `aliprehook allow` / `aliprehook revoke` for the current project key
 - [x] Read `.aliprehook.yml` `hooks:` map (minimal parser; no full YAML dependency)
 - [x] Resolve hook paths relative to the repo root; reject paths that leave the repo
@@ -71,12 +71,12 @@ Do 5a first: 5b builds on several user hooks running in order.
 
 Design: [01_shell-aliprehook-system.md](./01_shell-aliprehook-system.md) § Multiple hooks and the common (`*`) hook.
 
-- [x] Registry: `*` as project key matches every project (user `registry` only)
+- [x] Registry: `*` as project key matches every project (user `hooks.map` only)
 - [x] Project layer rejects `*`: `aliprehook allow` refuses, an already-allowed repo gets a warning and the entry is ignored (done early, `tests/test_project_wildcard.zsh`)
 - [x] Run **all** matching lines: `*` lines first, then exact-key lines, file order within each group (replaces "first match wins")
 - [x] First failing hook stops later hooks, the project layer and the main command
 - [x] Same (key, command, hook) listed twice runs once
-- [x] Update README § User registry, `templates/registry` comment and the Phase 2 test that checks "first line wins"
+- [x] Update README § User registry, `templates/hooks.map` comment and the Phase 2 test that checks "first line wins"
 - [x] Tests: `*` only; several `*` lines for one command in file order; `*` for `Dup` does not run for `serve`; `*` + exact key order; several exact-key lines in file order; failure in `*` hook stops the rest; `*` hook runs in a project with no other lines; path-key projects match `*`; duplicates run once
 
 **Done when:** with a `*` line and two `sample_app_web` lines for `Dup`, running `Dup` in `sample_app_web` runs all three in order and then the main command, and in any other project runs only the `*` hook.
@@ -108,7 +108,7 @@ Hooks run as child processes, so `export` in a hook never reaches the main comma
 Design and palette: [05_theme.md](./05_theme.md).
 
 - [x] `themes/purple.theme` (default) and `themes/none.theme`: `role=code` files for `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`, `var`, `hint`
-- [x] Theme loader (parse, never source): `ALIPREHOOK_THEME` name or path; `~/.config/aliprehook/theme` overrides single roles; missing roles → no color
+- [x] Theme loader (parse, never source): `ALIPREHOOK_THEME` name or path; `~/.config/aliprehook/theme-overrides` overrides single roles; missing roles → no color
 - [x] `_aliprehook_msg <level> …` + inline role helper in `lib.zsh`; route **every** message through it (no hard-coded colors anywhere); message text in the level's color (info: default, warning: yellow, error: red), named items (command, hook, key, var) keep their own colors
 - [x] Pass the resolved theme to hooks (`ALIPREHOOK_THEME_CODES`); `msg` helper in `bin/aliprehook_env_pass` uses it
 - [x] Color only when stderr is a TTY, `NO_COLOR` unset, `TERM` not `dumb`; `ALIPREHOOK_COLOR=auto|always|never`
@@ -116,48 +116,55 @@ Design and palette: [05_theme.md](./05_theme.md).
 - [x] `install.sh` / `uninstall.sh` manage `themes/`; README section on themes and turning color off
 - [x] Tests: no escape codes when not a TTY, with `NO_COLOR`, or `ALIPREHOOK_COLOR=never`; codes present with `always`; custom theme file and user override change only the listed roles; partial theme falls back to no color; same colors from `aliprehook_env_pass`; existing tests' message assertions unaffected (plain output in tests)
 
-**Done when:** with the default theme, warnings, errors and `aliprehook allow` messages show in the purple palette in a terminal, piping or `NO_COLOR=1` gives plain text, and switching to `ALIPREHOOK_THEME=none` (or editing one role in `~/.config/aliprehook/theme`) changes the output without touching any code.
+**Done when:** with the default theme, warnings, errors and `aliprehook allow` messages show in the purple palette in a terminal, piping or `NO_COLOR=1` gives plain text, and switching to `ALIPREHOOK_THEME=none` (or editing one role in `~/.config/aliprehook/theme-overrides`) changes the output without touching any code.
 
-## Phase 7 — Per-project commands (`commands` file)
+## Phase 7 — Per-project commands (`commands.map` file)
 
 Same command name, different command line per project (`Dbuild` → `docker compose build` in most projects, a long project-specific line in others). Design: [06_commands.md](./06_commands.md).
 
-- [x] `~/.config/aliprehook/commands` parser: `project_key  command  rest-of-line`; `#` comments and blank lines skipped; `templates/commands` with commented examples, created by `install.sh` if missing (never overwritten, kept by `uninstall.sh`)
+- [x] `~/.config/aliprehook/commands.map` parser: `project_key  command  rest-of-line`; `#` comments and blank lines skipped; `templates/commands.map` with commented examples, created by `install.sh` if missing (never overwritten, kept by `uninstall.sh`)
 - [x] Lookup: exact project key → `aliprehook_define` default; exactly one command runs; duplicate lines → first wins + warning with file and line
-- [x] No `*` in `commands`: a `*` line is an error (file + line) telling the user to change the `aliprehook_define` default instead; the command does not run
+- [x] No `*` in `commands.map`: a `*` line is an error (file + line) telling the user to change the `aliprehook_define` default instead; the command does not run
 - [x] `aliprehook_define` wrappers: after prehooks, run the chosen line with `eval` in a subshell, with hook-passed variables set
 - [x] Arguments: appended as `"$@"` unless the line contains `"$@"` / `$@` / `$*` itself
 - [x] Exit code is the command's; `--keep-env` behaves as before
 - [x] `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for hand-written (Case B) functions
 - [x] User layer only: `.aliprehook.yml` `commands:` section ignored with a warning
-- [x] Refuse a `commands` file writable by group or others (error, command not run); checked before any hook runs
+- [x] Refuse a `commands.map` file writable by group or others (error, command not run); checked before any hook runs
 - [x] Messages through the theme (`@command=`, `@key=` for file paths)
 - [x] README section; doc 01 summary marked implemented
 - [x] Tests: exact key beats default; `*` line rejected with error and ignored; no file / no match → default; env prefix and `$(…)` work; hook-passed variable usable in the line; arguments appended; `"$@"` placement; arguments with spaces intact; `cd`/assignments in the line do not change the shell; exit code passed through; failing hook → command not run; duplicate-line warning; group-writable file refused; `.aliprehook.yml` `commands:` ignored; hook-only (`:`) command overridden per project; `aliprehook_command` in a Case B function
 
-**Done when:** `aliprehook_define Dbuild docker compose build` plus a `commands` line for `sample_app_web` makes `Dbuild` run that line there (with `DOCKER_BUILDKIT=1 REVISION=$(…)` working) and `docker compose build` in every other project, and adding or removing the line needs no change to `.zshrc`.
+**Done when:** `aliprehook_define Dbuild docker compose build` plus a `commands.map` line for `sample_app_web` makes `Dbuild` run that line there (with `DOCKER_BUILDKIT=1 REVISION=$(…)` working) and `docker compose build` in every other project, and adding or removing the line needs no change to `.zshrc`.
 
 ## Phase 8 — Dogfood
 
 - [ ] Use it daily for 2+ weeks across several repos
 - [ ] Note friction: slow shell startup, confusing errors, missing commands
-- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands` line chose it) and why (dry run)
+- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands.map` line chose it) and why (dry run)
 
 ### Improvements from dogfooding
 
 Ideas that came up while using aliprehook. Implement only when picked.
 
 - [x] `aliprehook_env_pass --hint TEXT` ([04_hook-env.md](./04_hook-env.md) § Fix hint): global option, at most once; shown as `(TEXT)` in the `hint` color after each missing **required** name's error; display only, never run; tests: hint shown for required, not for optional, twice → exit 2, placement anywhere; README + doc 04
-- [x] Manage `registry` / `commands` from the CLI ([07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md)), always for the current project key:
+- [x] Manage `hooks.map` / `commands.map` from the CLI ([07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md)), always for the current project key:
   - Required values positional, optional ones as `--` options
-  - `aliprehook hook new <cmd> [--hook <file>] [--edit]`: hook from a template, `chmod +x`, registry line; default file `hooks/<repo>_<cmd>.sh` / `all_<cmd>.sh`; existing file reused
+  - `aliprehook hook new <cmd> [--hook <file>] [--edit]`: hook from a template, `chmod +x`, `hooks.map` line; default file `hooks/<repo>_<cmd>.sh` / `all_<cmd>.sh`; existing file reused
   - `aliprehook hook add <cmd> <hook>`, `hook rm <cmd> [--hook <file>]`, `hook ls [<cmd>]` (run order, `*` marked); hook must exist and be executable; duplicate add → no change
   - Choosing the project: `--all` (hooks only), `--key <key>`, `--path <dir>`; at most one; `aliprehook key --path <dir>`
   - Help: `aliprehook help`, `aliprehook hook help` / `command help`, `--help` on every subcommand; wrong calls print the usage line and exit 2
   - `aliprehook command set <cmd> '<line>'` (one quoted argument, replaces), `command rm <cmd>`, `command ls`; `--key` / `--path` accepted, `*` / `--all` rejected
-  - `aliprehook edit [registry|commands|allowed|theme]` opens `$EDITOR`
+  - `aliprehook edit [hooks|commands|allowed|theme]` opens `$EDITOR`
   - Keep comments and other lines; temp file + `mv`; keep permissions; never touch `.aliprehook.yml`; every change prints what it did
   - `aliprehook help` and README updated; tests for each subcommand, `--key` / `--path` / `--all` and conflicts, help output, duplicates, missing/non-executable hook, quoting kept exactly, `set` replaces, comments preserved, permissions kept, outside a git repo
+- [x] Clearer user-layer file names ([01_shell-aliprehook-system.md](./01_shell-aliprehook-system.md) § File names): `registry` → `hooks.map`, `commands` → `commands.map`, `allowed` → `allowed-repos`, `theme` → `theme-overrides`
+  - `lib.zsh`, CLI (`aliprehook edit hooks|commands|allowed|theme`, help texts, messages), `bin/aliprehook_env_pass` unaffected
+  - `templates/` renamed; `install.sh` creates new names and renames old files if the new one is missing (never overwrites)
+  - `uninstall.sh` removes the old-named files, keeps the new ones
+  - `lib.zsh` warns once per shell if an old file exists without its new one (run `./install.sh`); no long-term fallback
+  - Every doc, README, example and test updated to the new names
+  - Tests: install renames each old file, keeps an existing new file untouched, uninstall removes old names and keeps new ones, warning shown once, everything else unchanged
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 
@@ -166,12 +173,12 @@ Ideas that came up while using aliprehook. Implement only when picked.
 - [ ] `aliprehook init` (create user layer) and `aliprehook doctor` (check setup, permissions, sourcing)
 - [ ] Clear allow / revoke / explain UX, direnv-style messages when a repo has an un-allowed `.aliprehook.yml`
 - [ ] README warning: allowing a repo runs that repo's scripts
-- [ ] Content-bound allow (re-ask on change, direnv-style). Today `allowed` stores only the project key, so after `git pull` a changed `.aliprehook.yml` or hook script runs without asking.
-  - `allowed` stores key + clone root path (`pwd -P` of the repo root) + content hash: hash of `.aliprehook.yml` plus every hook script it references
+- [ ] Content-bound allow (re-ask on change, direnv-style). Today `allowed-repos` stores only the project key, so after `git pull` a changed `.aliprehook.yml` or hook script runs without asking.
+  - `allowed-repos` stores key + clone root path (`pwd -P` of the repo root) + content hash: hash of `.aliprehook.yml` plus every hook script it references
   - **Per clone, not per key (decided):** allowing one clone does not allow other clones of the same remote. A new clone is blocked until `aliprehook allow` is run in it.
   - Hash changed → project hooks are skipped, with a message: `.aliprehook.yml changed; run aliprehook allow to review and re-allow`
   - `aliprehook allow` shows the yml and hook list (or a diff vs the last allowed version) before recording the new hash
-  - **Existing key-only `allowed` lines need a re-allow (decided):** they no longer enable project hooks; the user runs `aliprehook allow` again in each clone. Show a message pointing at this when a key-only line matches.
+  - **Existing key-only `allowed-repos` lines need a re-allow (decided):** they no longer enable project hooks; the user runs `aliprehook allow` again in each clone. Show a message pointing at this when a key-only line matches.
   - Tests: edit yml → skipped; edit a hook script → skipped; re-allow → runs; unrelated repo files changing → still allowed; second clone of an allowed remote → skipped until allowed there; old key-only line → skipped with re-allow message
 - [ ] Local hooks only; no remote script download
 - [ ] Document identity edge cases: forks (`origin` vs `upstream`), GitHub Enterprise / self-hosted GitLab, monorepos
@@ -185,11 +192,11 @@ Ideas that came up while using aliprehook. Implement only when picked.
 - [ ] `curl -fsSL … | sh` install script pointing at Releases
 - [ ] Homebrew tap (core formula later) as the recommended Mac path
 - [ ] Project site: docs + both install paths (`brew install …` and `curl … | sh`)
-- [ ] Versioned upgrades that do not break `registry` / `allowed` (format version + migration)
+- [ ] Versioned upgrades that do not break `hooks.map` / `allowed-repos` (format version + migration)
 
 ### Uninstall
 
-Rule for every install path: **uninstall removes the program, never user data.** User data (`registry`, `allowed`, `hooks/`) lives in `~/.config/aliprehook/` and is only removed by the user.
+Rule for every install path: **uninstall removes the program, never user data.** User data (`hooks.map`, `allowed-repos`, `hooks/`) lives in `~/.config/aliprehook/` and is only removed by the user.
 
 - [ ] Split program files from user data:
   - Program (`lib.zsh`, README): Brew prefix (`$(brew --prefix)/share/aliprehook/`) or install-script dir (e.g. `~/.local/share/aliprehook/`)

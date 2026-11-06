@@ -8,9 +8,9 @@ trap 'rm -rf $tmp' EXIT
 tmp=${tmp:A}
 ALIPREHOOK_HOME=$tmp/home
 mkdir -p $ALIPREHOOK_HOME/hooks
-cp $ALIPREHOOK_ROOT/templates/registry $ALIPREHOOK_HOME/registry
-cp $ALIPREHOOK_ROOT/templates/commands $ALIPREHOOK_HOME/commands
-chmod 600 $ALIPREHOOK_HOME/registry $ALIPREHOOK_HOME/commands
+cp $ALIPREHOOK_ROOT/templates/hooks.map $ALIPREHOOK_HOME/hooks.map
+cp $ALIPREHOOK_ROOT/templates/commands.map $ALIPREHOOK_HOME/commands.map
+chmod 600 $ALIPREHOOK_HOME/hooks.map $ALIPREHOOK_HOME/commands.map
 
 repo=$tmp/repo
 key=github.com/org/sample_app_web
@@ -23,8 +23,8 @@ plain=$tmp/plain
 mkdir -p $plain
 cd $repo
 
-R=$ALIPREHOOK_HOME/registry
-C=$ALIPREHOOK_HOME/commands
+R=$ALIPREHOOK_HOME/hooks.map
+C=$ALIPREHOOK_HOME/commands.map
 entries() { grep -v '^#' $1 | grep -v '^$'; }   # non-comment lines
 mode() { zmodload -F zsh/stat b:zstat; local -a m; zstat -A m +mode -- $1; printf '%o' $(( m[1] & 8#777 )); }
 mkx() { print -r -- '#!/bin/sh' > $1; chmod +x $1; }
@@ -67,7 +67,7 @@ h=$ALIPREHOOK_HOME/hooks/sample_app_web_Dup.sh
 [[ $(<$h) == "#!/bin/sh"*"runs before \`Dup\` in $key"*"aliprehook_env_pass"*"exit 0" ]] || fail "hook new: template: '$(<$h)'"
 [[ $out == *"created "*"sample_app_web_Dup.sh"*"added $key  Dup  hooks/sample_app_web_Dup.sh"* ]] || fail "hook new: messages: '$out'"
 assert_eq "$key  Dup  hooks/sample_app_web_Dup.sh" "$(entries $R)" "hook new: registry line"
-[[ $(<$R) == "# aliprehook user registry"* ]] || fail "hook new: comments kept"
+[[ $(<$R) == "# aliprehook hooks.map"* ]] || fail "hook new: comments kept"
 assert_eq 600 "$(mode $R)" "registry permissions kept"
 
 # Template runs and does nothing; the command still works.
@@ -183,7 +183,7 @@ out=$(aliprehook hook rm Dup 2>&1)
 [[ $(entries $R) != *"$key  Dup "* ]] || fail "hook rm: project's Dup lines gone"
 [[ $(<$R) == *"*  Dup  hooks/all_Dup.sh"* ]] || fail "hook rm: * line kept"
 [[ $(<$R) == *"github.com/org/other_app  Dup"* ]] || fail "hook rm: other project kept"
-[[ $(<$R) == "# aliprehook user registry"* ]] || fail "hook rm: comments kept"
+[[ $(<$R) == "# aliprehook hooks.map"* ]] || fail "hook rm: comments kept"
 aliprehook hook rm Dup >/dev/null 2>&1
 assert_eq 1 $? "hook rm nothing: exit 1"
 aliprehook hook rm Dup --all >/dev/null

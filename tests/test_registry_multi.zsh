@@ -28,7 +28,7 @@ git -C $tmp/api remote add origin git@github.com:org/sample_app_api.git
 web=github.com/org/sample_app_web
 
 # Exact-key lines are listed before * lines on purpose: * must still run first.
-cat > $ALIPREHOOK_HOME/registry <<REG
+cat > $ALIPREHOOK_HOME/hooks.map <<REG
 $web  Dup    hooks/web.sh
 *     Dup    hooks/vpn.sh
 $web  Dup    hooks/web_db.sh

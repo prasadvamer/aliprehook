@@ -18,7 +18,7 @@ typeset -gi _aliprehook_env_max_bytes=65536 _aliprehook_env_max_vars=100
 
 # --- Output theme -----------------------------------------------------------
 # Colors come from one theme file (themes/<name>.theme, or a path in
-# ALIPREHOOK_THEME), with single roles overridden by ALIPREHOOK_HOME/theme.
+# ALIPREHOOK_THEME), with single roles overridden by ALIPREHOOK_HOME/theme-overrides.
 # No message hard-codes a color: everything goes through _aliprehook_msg.
 typeset -gA _aliprehook_theme
 typeset -g _aliprehook_theme_key=
@@ -52,7 +52,7 @@ _aliprehook_theme_ensure() {
   else
     print -u2 "aliprehook: warning: theme not found: $file (using no colors)"
   fi
-  [[ -r $ALIPREHOOK_HOME/theme ]] && _aliprehook_theme_read $ALIPREHOOK_HOME/theme
+  [[ -r $ALIPREHOOK_HOME/theme-overrides ]] && _aliprehook_theme_read $ALIPREHOOK_HOME/theme-overrides
   return 0
 }
 
@@ -195,7 +195,7 @@ aliprehook_project_key() {
 aliprehook_registry_lookup() {
   emulate -L zsh -o extended_glob
   local key=$1 cmd=$2 k c h id
-  local registry=$ALIPREHOOK_HOME/registry
+  local registry=$ALIPREHOOK_HOME/hooks.map
   local -a common exact
   local -A seen
 
@@ -220,11 +220,11 @@ aliprehook_registry_lookup() {
   print -rl -- $common $exact
 }
 
-# Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed.
+# Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed-repos.
 aliprehook_is_allowed() {
   emulate -L zsh -o extended_glob
   local key=$1 line
-  local allowed=$ALIPREHOOK_HOME/allowed
+  local allowed=$ALIPREHOOK_HOME/allowed-repos
 
   [[ -n $key && -r $allowed ]] || return 1
   while read -r line; do
@@ -264,7 +264,7 @@ _aliprehook_project_entries() {
 }
 
 # Print problems in <root>/.aliprehook.yml, one per line. Exit 1 if any.
-# `*` (all-projects) hooks are user-registry only: a repo must not define them.
+# `*` (all-projects) hooks are hooks.map only: a repo must not define them.
 aliprehook_project_check() {
   emulate -L zsh -o extended_glob
   local root=$1 entry n name value
@@ -275,7 +275,7 @@ aliprehook_project_check() {
     n=${entry%%$'\t'*}; entry=${entry#*$'\t'}
     name=${entry%%$'\t'*}; value=${entry#*$'\t'}
     if [[ $name == '*' ]]; then
-      problems+=(".aliprehook.yml:$n: '*' hooks are not allowed in a repo; only in your user registry ($ALIPREHOOK_HOME/registry)")
+      problems+=(".aliprehook.yml:$n: '*' hooks are not allowed in a repo; only in your own $ALIPREHOOK_HOME/hooks.map")
     elif [[ $name != [A-Za-z_][A-Za-z0-9_-]# ]]; then
       problems+=(".aliprehook.yml:$n: invalid command name: $name")
     elif [[ -z $value ]]; then
@@ -307,7 +307,7 @@ aliprehook_project_lookup() {
 }
 
 # Warn if <root>/.aliprehook.yml has a `commands:` section: per-project
-# command lines are shell code, so only the user's commands file may set them.
+# command lines are shell code, so only the user's commands.map may set them.
 _aliprehook_project_commands_warn() {
   emulate -L zsh -o extended_glob
   local root=$1 line
@@ -315,19 +315,19 @@ _aliprehook_project_commands_warn() {
   [[ -r $yml ]] || return 0
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ $line == commands:[[:space:]]#(\#*|) ]]; then
-      _aliprehook_msg warning "@key=$yml" ": commands: section ignored; per-project commands go in your own " "@key=$ALIPREHOOK_HOME/commands"
+      _aliprehook_msg warning "@key=$yml" ": commands: section ignored; per-project commands go in your own " "@key=$ALIPREHOOK_HOME/commands.map"
       return 0
     fi
   done < $yml
 }
 
 # --- Per-project commands ---------------------------------------------------
-# ALIPREHOOK_HOME/commands: "project_key  command  rest-of-line (shell syntax)".
+# ALIPREHOOK_HOME/commands.map: "project_key  command  rest-of-line (shell syntax)".
 # Print the line for <cmd> in the current project. Exit 0 if found, 1 if none
 # (use the default), 2 on an error (already reported; do not run anything).
 _aliprehook_command_lookup() {
   emulate -L zsh -o extended_glob
-  local cmd=$1 key k c rest line found file=$ALIPREHOOK_HOME/commands
+  local cmd=$1 key k c rest line found file=$ALIPREHOOK_HOME/commands.map
   integer n=0 at=0 bad=0
   local -a st
 
@@ -393,7 +393,7 @@ _aliprehook_command_eval() {
 
 # For hand-written functions (README Case B), after aliprehook_run:
 #   aliprehook_command [--keep-env] <name> <default command...> -- "$@"
-# Runs this project's line from the commands file, else the default; either
+# Runs this project's line from commands.map, else the default; either
 # way with the arguments after `--` and the variables the hooks passed.
 aliprehook_command() {
   local _aliprehook_keep= _aliprehook_name _aliprehook_line
@@ -579,6 +579,21 @@ _aliprehook_exec() {
   }
 }
 
+# Files renamed in 0.x: warn once per shell if an old one is still there
+# without its new name (install.sh renames them). Old files are not read.
+typeset -g _aliprehook_old_names_warned=
+_aliprehook_old_names_check() {
+  emulate -L zsh
+  [[ $_aliprehook_old_names_warned == $ALIPREHOOK_HOME ]] && return 0
+  _aliprehook_old_names_warned=$ALIPREHOOK_HOME
+  local old new
+  for old new in registry hooks.map commands commands.map allowed allowed-repos theme theme-overrides; do
+    if [[ -f $ALIPREHOOK_HOME/$old && ! -e $ALIPREHOOK_HOME/$new ]]; then
+      _aliprehook_msg warning "@key=$ALIPREHOOK_HOME/$old" " is not read anymore; it is now " "@key=$new" " " "@hint=(run ./install.sh from the aliprehook repo, or: mv $ALIPREHOOK_HOME/$old $ALIPREHOOK_HOME/$new)"
+    fi
+  done
+}
+
 # Run prehooks for <cmd_name>: user layer, then project layer if allowed.
 # Extra args are passed to the hooks. Returns non-zero if a hook fails.
 aliprehook_run() {
@@ -587,11 +602,12 @@ aliprehook_run() {
   shift
 
   [[ -n $cmd ]] || { _aliprehook_msg error "aliprehook_run: missing command name"; return 2; }
+  _aliprehook_old_names_check
 
   key=$(aliprehook_project_key)
   _aliprehook_env_user=() _aliprehook_env_project=() _aliprehook_env=()
 
-  # User layer: every matching registry hook, in order; first failure stops.
+  # User layer: every matching hooks.map hook, in order; first failure stops.
   local -a hooks
   hooks=("${(@f)$(aliprehook_registry_lookup $key $cmd)}")
   for hook in $hooks; do
@@ -674,7 +690,7 @@ aliprehook_with_env() {
   "$@"
 }
 
-# --- CLI: manage registry / commands (aliprehook hook|command|edit) ---------
+# --- CLI: manage hooks.map / commands.map (aliprehook hook|command|edit) ---------
 # Design: doc/07_cli-manage-hooks-and-commands.md
 
 typeset -gA _aliprehook_usage
@@ -686,7 +702,7 @@ _aliprehook_usage=(
   'command set'    "aliprehook command set <cmd> '<command line>' [--key <key> | --path <dir>]"
   'command rm'     'aliprehook command rm <cmd> [--key <key> | --path <dir>]'
   'command ls'     'aliprehook command ls [--key <key> | --path <dir>]'
-  'edit'           'aliprehook edit [registry|commands|allowed|theme]'
+  'edit'           'aliprehook edit [hooks|commands|allowed|theme]'
   'key'            'aliprehook key [--path <dir>]'
 )
 
@@ -710,15 +726,15 @@ _aliprehook_help() {
   allow                 run project hooks from this repo's .aliprehook.yml
   revoke                stop running them
   key [--path <dir>]    print the project key (here, or for <dir>)
-  hook new|add|rm|ls    manage hooks in your registry       (aliprehook hook help)
-  command set|rm|ls     manage per-project command lines    (aliprehook command help)
-  edit [<file>]         open registry, commands, allowed or theme in \$EDITOR
+  hook new|add|rm|ls    manage hooks in hooks.map           (aliprehook hook help)
+  command set|rm|ls     manage per-project command lines in commands.map (aliprehook command help)
+  edit [<file>]         open hooks.map, commands.map, allowed-repos or theme-overrides in \$EDITOR
   help                  this help
 
 Every subcommand takes --help, e.g. aliprehook hook new --help"
       ;;
     hook)
-      print -r -- "usage: aliprehook hook <new|add|rm|ls> …   (hooks run before a command; file: registry)
+      print -r -- "usage: aliprehook hook <new|add|rm|ls> …   (hooks run before a command; file: hooks.map)
 
   $_aliprehook_usage[hook new]
   $_aliprehook_usage[hook add]
@@ -730,7 +746,7 @@ Project: current directory's key by default; --all = every project (*),
 Details: aliprehook hook <sub> --help"
       ;;
     command)
-      print -r -- "usage: aliprehook command <set|rm|ls> …   (per-project command lines; file: commands)
+      print -r -- "usage: aliprehook command <set|rm|ls> …   (per-project command lines; file: commands.map)
 
   $_aliprehook_usage[command set]
   $_aliprehook_usage[command rm]
@@ -767,7 +783,7 @@ example: aliprehook hook add Dbuild aws_login.sh --all"
     'hook rm')
       print -r -- "usage: $_aliprehook_usage[hook rm]
 
-Remove the registry line(s) for <cmd> in the chosen project. The hook file is kept.
+Remove the hooks.map line(s) for <cmd> in the chosen project. The hook file is kept.
 
   --hook <file>   only the line for this hook
 $(_aliprehook_help_project all)
@@ -819,7 +835,9 @@ example: aliprehook command ls --path ~/src/sample_app_web"
     edit)
       print -r -- "usage: $_aliprehook_usage[edit]
 
-Open a file of ${ALIPREHOOK_HOME/#$HOME/~}/ in \$VISUAL / \$EDITOR (default: registry).
+Open a file of ${ALIPREHOOK_HOME/#$HOME/~}/ in \$VISUAL / \$EDITOR:
+  hooks → hooks.map (default), commands → commands.map,
+  allowed → allowed-repos, theme → theme-overrides
 
 example: aliprehook edit commands"
       ;;
@@ -931,7 +949,7 @@ _aliprehook_cli_cmdname() {
   _aliprehook_cli_bad $1 "invalid command name: " "@command=$2"
 }
 
-# Resolve a hook argument into the caller's `stored` (registry form) and
+# Resolve a hook argument into the caller's `stored` (hooks.map form) and
 # `abs` (file path): /abs as is, bare name → hooks/<name>, else under HOME.
 _aliprehook_cli_hookpath() {
   local topic=$1 arg=$2
@@ -949,7 +967,7 @@ _aliprehook_cli_hookpath() {
   abs=${abs:a}
 }
 
-# Absolute path of a registry hook column.
+# Absolute path of a hooks.map hook column.
 _aliprehook_cli_abs() {
   local h=$1
   [[ $h == /* ]] || h=$ALIPREHOOK_HOME/$h
@@ -988,11 +1006,11 @@ _aliprehook_write_lines() {
 # Short display form of a path (~ for HOME).
 _aliprehook_tilde() { print -r -- ${1/#$HOME/\~}; }
 
-# Add "<key>  <cmd>  <stored>" to the registry unless the same hook is there.
+# Add "<key>  <cmd>  <stored>" to hooks.map unless the same hook is there.
 _aliprehook_cli_registry_add() {
   emulate -L zsh -o extended_glob
   local key=$1 cmd=$2 stored=$3 abs=$4 line
-  local registry=$ALIPREHOOK_HOME/registry
+  local registry=$ALIPREHOOK_HOME/hooks.map
   local -a lines w
   _aliprehook_read_lines $registry
   for line in "${lines[@]}"; do
@@ -1106,7 +1124,7 @@ _aliprehook_cli_hook() {
       ;;
 
     rm)
-      local registry=$ALIPREHOOK_HOME/registry
+      local registry=$ALIPREHOOK_HOME/hooks.map
       local -a keep removed
       if (( ${+opts[hook]} )); then
         _aliprehook_cli_hookpath $topic $opts[hook] || return 2
@@ -1140,7 +1158,7 @@ _aliprehook_cli_hook() {
       local -A seen
       local k c h id st out star gname
       integer color=0 width=0
-      _aliprehook_read_lines $ALIPREHOOK_HOME/registry
+      _aliprehook_read_lines $ALIPREHOOK_HOME/hooks.map
       for line in "${lines[@]}"; do
         [[ $line == [[:space:]]#(\#*|) ]] && continue
         w=(${=line})
@@ -1206,7 +1224,7 @@ _aliprehook_cli_hook() {
 _aliprehook_cli_command() {
   emulate -L zsh -o extended_glob
   local sub=$1 topic key line cmd new old
-  local file=$ALIPREHOOK_HOME/commands
+  local file=$ALIPREHOOK_HOME/commands.map
   local -A opts
   local -a pos lines keep
   (( $# )) && shift
@@ -1346,10 +1364,13 @@ _aliprehook_cli_edit() {
     return 0
   fi
   (( $#pos <= 1 )) || { _aliprehook_cli_bad edit "expected at most one file"; return 2; }
-  local f=${pos[1]:-registry}
-  case $f in
-    registry|commands|allowed|theme) ;;
-    *) _aliprehook_cli_bad edit "unknown file: $f (registry, commands, allowed, theme)"; return 2 ;;
+  local f
+  case ${pos[1]:-hooks} in
+    hooks) f=hooks.map ;;
+    commands) f=commands.map ;;
+    allowed) f=allowed-repos ;;
+    theme) f=theme-overrides ;;
+    *) _aliprehook_cli_bad edit "unknown file: $pos[1] (hooks, commands, allowed, theme)"; return 2 ;;
   esac
   command mkdir -p -- $ALIPREHOOK_HOME
   ${=${VISUAL:-${EDITOR:-vi}}} $ALIPREHOOK_HOME/$f
@@ -1376,8 +1397,9 @@ _aliprehook_cli_keycmd() {
 # aliprehook allow | revoke | key | hook | command | edit | help
 aliprehook() {
   emulate -L zsh -o extended_glob
-  local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed tmp line
+  local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed-repos tmp line
   (( $# )) && shift
+  _aliprehook_old_names_check
 
   case $sub in
     allow)
@@ -1432,9 +1454,9 @@ aliprehook() {
 }
 
 # Define <name> as a shell function that runs prehooks, then <command...> "$@"
-# (or this project's line from ALIPREHOOK_HOME/commands) with the variables
+# (or this project's line from ALIPREHOOK_HOME/commands.map) with the variables
 # the hooks passed. --keep-env keeps user-layer variables in the shell afterwards.
-# The commands file is checked first, so a broken one stops before any hook.
+# commands.map is checked first, so a broken one stops before any hook.
 aliprehook_define() {
   emulate -L zsh -o extended_glob
   local keep= name body

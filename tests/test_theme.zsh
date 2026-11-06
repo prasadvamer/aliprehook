@@ -70,12 +70,12 @@ assert_eq "${E}[35maliprehook:${E}[0m warning: h.sh: X has no value; not passed 
   "$(ALIPREHOOK_THEME=$tmp/mine.theme eval $warn 2>&1)" "partial custom theme: missing roles uncolored"
 
 # User override: one role changes, the rest stays purple.
-print '# my tweak\nhook = 35   # magenta hooks' > $ALIPREHOOK_HOME/theme
+print '# my tweak\nhook = 35   # magenta hooks' > $ALIPREHOOK_HOME/theme-overrides
 _aliprehook_theme_key=   # as after a new `source`
 out=$(eval $warn 2>&1)
 [[ $out == *"${E}[35mh.sh${E}[0m"* ]] || fail "user override: hook color not applied: ${(q+)out}"
 [[ $out == "$B"* ]] || fail "user override: brand changed"
-rm $ALIPREHOOK_HOME/theme; _aliprehook_theme_key=
+rm $ALIPREHOOK_HOME/theme-overrides; _aliprehook_theme_key=
 
 # Theme files are parsed, never sourced; bad codes are ignored.
 print 'brand=$(touch '$tmp'/pwned)\nhook=31;evil\nkey=34' > $tmp/bad.theme
@@ -92,7 +92,7 @@ _aliprehook_theme_key=
 print -r -- '#!/bin/sh
 aliprehook_env_pass X' > $ALIPREHOOK_HOME/hooks/h.sh
 chmod +x $ALIPREHOOK_HOME/hooks/h.sh
-print -r -- "$tmp/proj  T  hooks/h.sh" > $ALIPREHOOK_HOME/registry
+print -r -- "$tmp/proj  T  hooks/h.sh" > $ALIPREHOOK_HOME/hooks.map
 lib_line=$(eval '_aliprehook_msg warning "@hook=h.sh" ": " "@var=X" " has no value (unset, empty or not exported); not passed to " "@command=T"' 2>&1)
 hook_line=$(aliprehook_run T 2>&1)
 assert_eq "$lib_line" "$hook_line" "aliprehook_env_pass output identical to lib.zsh (always)"
@@ -108,7 +108,7 @@ unset ALIPREHOOK_THEME
 
 # Every failure carries an error: label.
 print '#!/bin/sh' > $ALIPREHOOK_HOME/hooks/noexec.sh
-print -r -- "$tmp/proj  N  hooks/noexec.sh" > $ALIPREHOOK_HOME/registry
+print -r -- "$tmp/proj  N  hooks/noexec.sh" > $ALIPREHOOK_HOME/hooks.map
 ALIPREHOOK_COLOR=never
 [[ "$(aliprehook_run N 2>&1)" == "aliprehook: error: user hook not executable: "* ]] || fail "not executable: no error: label"
 

@@ -8,7 +8,7 @@ trap 'rm -rf $tmp' EXIT
 tmp=${tmp:A}
 ALIPREHOOK_HOME=$tmp/home
 mkdir -p $ALIPREHOOK_HOME/hooks
-cp $ALIPREHOOK_ROOT/templates/allowed $ALIPREHOOK_HOME/allowed
+cp $ALIPREHOOK_ROOT/templates/allowed-repos $ALIPREHOOK_HOME/allowed-repos
 
 log=$tmp/log
 reset() { : > $log; }
@@ -48,7 +48,7 @@ other:
 YML
 
 mkhook $ALIPREHOOK_HOME/hooks/user.sh user
-print "$key  Dup  hooks/user.sh" > $ALIPREHOOK_HOME/registry
+print "$key  Dup  hooks/user.sh" > $ALIPREHOOK_HOME/hooks.map
 
 # --- parser ---
 assert_eq .aliprehook/before_Dup.sh "$(aliprehook_project_lookup $repo Dup)" "yml: plain + inline comment"
@@ -69,9 +69,9 @@ assert_eq "user:Dup::a" "$(logged)" "not allowed: only user hook"
 out=$(aliprehook allow); rc=$?
 assert_eq 0 $rc "allow: exit 0"
 [[ $out == *"allowed $key"* ]] || fail "allow: message '$out'"
-assert_eq "$key" "$(grep -v '^#' $ALIPREHOOK_HOME/allowed)" "allow: key recorded"
+assert_eq "$key" "$(grep -v '^#' $ALIPREHOOK_HOME/allowed-repos)" "allow: key recorded"
 aliprehook allow >/dev/null
-assert_eq 1 "$(grep -c "^$key\$" $ALIPREHOOK_HOME/allowed)" "allow twice: no duplicate"
+assert_eq 1 "$(grep -c "^$key\$" $ALIPREHOOK_HOME/allowed-repos)" "allow twice: no duplicate"
 
 reset; aliprehook_run Dup a "b c"; rc=$?
 assert_eq 0 $rc "allowed: exit 0"
@@ -121,14 +121,14 @@ project:Dup:${tmp}/clone:" "$(logged)" "second clone shares allow"
 cd $repo
 
 # --- revoke ---
-print '# keep me' >> $ALIPREHOOK_HOME/allowed
-print 'github.com/org/other' >> $ALIPREHOOK_HOME/allowed
+print '# keep me' >> $ALIPREHOOK_HOME/allowed-repos
+print 'github.com/org/other' >> $ALIPREHOOK_HOME/allowed-repos
 out=$(aliprehook revoke); rc=$?
 assert_eq 0 $rc "revoke: exit 0"
 [[ $out == *"revoked $key"* ]] || fail "revoke: message '$out'"
-grep -qx "$key" $ALIPREHOOK_HOME/allowed && fail "revoke: key still present"
-grep -qx 'github.com/org/other' $ALIPREHOOK_HOME/allowed || fail "revoke: removed other key"
-grep -qx '# keep me' $ALIPREHOOK_HOME/allowed || fail "revoke: removed comment"
+grep -qx "$key" $ALIPREHOOK_HOME/allowed-repos && fail "revoke: key still present"
+grep -qx 'github.com/org/other' $ALIPREHOOK_HOME/allowed-repos || fail "revoke: removed other key"
+grep -qx '# keep me' $ALIPREHOOK_HOME/allowed-repos || fail "revoke: removed comment"
 
 reset; aliprehook_run Dup
 assert_eq "user:Dup::" "$(logged)" "revoked: project hook skipped again"

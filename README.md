@@ -35,8 +35,9 @@ This creates `~/.config/aliprehook/`:
 ~/.config/aliprehook/
   README.md          # this file
   lib.zsh            # sourced from ~/.zshrc
-  registry           # your hooks: project_key + command → hook
-  allowed            # repos whose project hooks may run
+  hooks.map          # your hooks: project_key + command → hook
+  commands.map       # per-project command lines (see 10.)
+  allowed-repos      # repos whose project hooks may run
   hooks/
     example_echo.sh  # safe example hook
   bin/
@@ -83,7 +84,7 @@ hello and more
 functions hello
 # hello () {
 #   local _aliprehook_line
-#   _aliprehook_line=$(_aliprehook_command_lookup hello)   ← this project's line in `commands`, if any (none yet)
+#   _aliprehook_line=$(_aliprehook_command_lookup hello)   ← this project's line in `commands.map`, if any (none yet)
 #   (( $? < 2 )) || return 1
 #   aliprehook_run hello "$@" || return $?   ← runs hooks for "hello" first (none yet)
 #   _aliprehook_env_decl                     ← picks up variables the hooks passed (none yet)
@@ -148,9 +149,9 @@ See the key for where you are:
 aliprehook key
 ```
 
-## 4. User registry
+## 4. User hooks (`hooks.map`)
 
-`~/.config/aliprehook/registry` is a plain text file, one hook per line:
+`~/.config/aliprehook/hooks.map` is a plain text file, one hook per line:
 
 ```text
 # project_key                     command  hook
@@ -180,7 +181,7 @@ A `*` key matches **every** project, for that command only. Use it for steps eve
 - Run order: all `*` lines first, then the lines for the current project; file order within each group. With the example above, `Dup` in `sample_app_web` runs `common_Dup.sh`, `sample_app_web_Dup.sh`, `sample_app_web_db.sh`, then the project hook (if allowed), then `docker compose up`.
 - The first failing hook stops everything after it, including the main command.
 - The same line listed twice runs once.
-- `*` is the only wildcard (no `github.com/org/*`), and it works only here in your registry, never in a repo's `.aliprehook.yml`.
+- `*` is the only wildcard (no `github.com/org/*`), and it works only here in your `hooks.map`, never in a repo's `.aliprehook.yml`.
 
 ## 5. Project layer and `aliprehook allow`
 
@@ -239,7 +240,7 @@ By hand, the same thing:
    ```
 2. Register it, from inside the project:
    ```zsh
-   echo "$(aliprehook key)  Dup  hooks/my_app_Dup.sh" >> ~/.config/aliprehook/registry
+   echo "$(aliprehook key)  Dup  hooks/my_app_Dup.sh" >> ~/.config/aliprehook/hooks.map
    ```
 3. Make sure the command is defined with `aliprehook_define` (or calls `aliprehook_run`, see below).
 
@@ -265,7 +266,7 @@ Exit non-zero to stop the command. Print to stderr (`>&2`) to keep the command's
 
 ```zsh
 cd ~/any/project
-echo "$(aliprehook key)  Dup  hooks/example_echo.sh" >> ~/.config/aliprehook/registry
+echo "$(aliprehook key)  Dup  hooks/example_echo.sh" >> ~/.config/aliprehook/hooks.map
 Dup --version
 ```
 
@@ -278,7 +279,7 @@ aliprehook: example_echo.sh ran
 Docker Compose version …
 ```
 
-Remove that line from `registry` when done.
+Remove that line from `hooks.map` when done.
 
 ## 8. Pass variables to the command
 
@@ -321,7 +322,7 @@ A missing required value stops the main command even if the hook exits 0; no `||
 
 ```sh
 #!/bin/sh
-# hooks/require_aws.sh   (registry: *  Dbuild  hooks/require_aws.sh)
+# hooks/require_aws.sh   (hooks.map: *  Dbuild  hooks/require_aws.sh)
 aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
 
@@ -364,7 +365,7 @@ aliprehook messages are colored with a purple theme. Each color has one meaning:
 |---|---|---|
 | Bold orchid | From aliprehook | `aliprehook:` |
 | Default text | Information, nothing wrong | `project hooks from … will now run` |
-| Bold green | It worked | `allowed`, `revoked` |
+| Bold green | It worked | `allowed-repos`, `revoked` |
 | Yellow | Look, but the command continues (label and text) | `warning: … has no value` |
 | Red | Stopped, the command did not run (label and text) | `error: …`, `aborted` |
 | Bold green | The command you typed | `Dup` |
@@ -385,10 +386,10 @@ aliprehook messages are colored with a purple theme. Each color has one meaning:
 | `ALIPREHOOK_COLOR=always` | Always color, even in pipes (e.g. for screenshots) |
 | `ALIPREHOOK_THEME=none` | Theme with no colors |
 
-**Change colors.** Override single roles in `~/.config/aliprehook/theme` (open a new shell after editing):
+**Change colors.** Override single roles in `~/.config/aliprehook/theme-overrides` (open a new shell after editing):
 
 ```text
-# ~/.config/aliprehook/theme
+# ~/.config/aliprehook/theme-overrides
 hook=35      # magenta hook names
 key=1;34     # bold blue paths
 ```
@@ -405,7 +406,7 @@ The same name can run a **different command line per project**. Keep the default
 aliprehook_define Dbuild docker compose build
 ```
 
-and list the exceptions in `~/.config/aliprehook/commands` (created by `install.sh`):
+and list the exceptions in `~/.config/aliprehook/commands.map` (created by `install.sh`):
 
 ```text
 # project_key                     command  what runs (rest of the line, shell syntax)
@@ -427,7 +428,7 @@ github.com/org/sample_app_api     Test     pytest "$@" -m "not slow"
 - No `*` key: to change the command everywhere, change the `aliprehook_define` line. A `*` line is an error and the command does not run.
 - Several lines for the same project and command: the first wins, with a warning.
 - User layer only: a repo's `.aliprehook.yml` cannot define commands (a `commands:` section is ignored with a warning).
-- The file must not be writable by group or others (`chmod go-w ~/.config/aliprehook/commands`), or the command refuses to run.
+- The file must not be writable by group or others (`chmod go-w ~/.config/aliprehook/commands.map`), or the command refuses to run.
 - Works for hook-only commands too: `aliprehook_define Rpep :` can run a real command in some projects.
 
 In your own functions (Case B), use `aliprehook_command` after `aliprehook_run`; your arguments go after `--`:
@@ -445,7 +446,7 @@ Design: [doc/06_commands.md](./doc/06_commands.md).
 
 ## 11. Manage hooks and commands
 
-`aliprehook hook …` and `aliprehook command …` edit `registry` and `commands` for you, for the **current project key** by default:
+`aliprehook hook …` and `aliprehook command …` edit `hooks.map` and `commands.map` for you, for the **current project key** by default:
 
 ```zsh
 aliprehook hook new Dup                     # create hooks/sample_app_web_Dup.sh from a template (executable) and register it
@@ -459,7 +460,7 @@ aliprehook command set Dbuild 'DOCKER_BUILDKIT=1 docker compose -f docker-compos
 aliprehook command rm Dbuild                # back to the aliprehook_define default
 aliprehook command ls
 
-aliprehook edit [registry|commands|allowed|theme]   # open the file in $EDITOR
+aliprehook edit [hooks|commands|allowed|theme]   # open the file in $EDITOR
 ```
 
 **Choosing the project** (at most one):
@@ -486,7 +487,7 @@ Design: [doc/07_cli-manage-hooks-and-commands.md](./doc/07_cli-manage-hooks-and-
 # before
 Dup() { cp -n .env.example .env; docker compose up "$@"; }
 
-# after: prep goes in hooks/<project>_Dup.sh + a registry line (or the repo's .aliprehook.yml)
+# after: prep goes in hooks/<project>_Dup.sh + a `hooks.map` line (or the repo's .aliprehook.yml)
 aliprehook_define Dup docker compose up
 ```
 
@@ -523,20 +524,20 @@ Dclear() {
 | `aliprehook_define [--keep-env] <name> <command...>` | Define an opt-in command |
 | `aliprehook_run <name> [args...]` | Run hooks for `<name>` (used inside functions) |
 | `aliprehook_with_env [--keep-env] <command...>` | Run a command with the variables the last `aliprehook_run` collected |
-| `aliprehook_command [--keep-env] <name> <default...> -- [args...]` | Like `aliprehook_with_env`, but runs this project's line from `commands` if there is one |
+| `aliprehook_command [--keep-env] <name> <default...> -- [args...]` | Like `aliprehook_with_env`, but runs this project's line from `commands.map` if there is one |
 | `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME\|NAME=value...] [--required …] [--optional …]` | In a hook: pass variables to the main command |
 | `aliprehook allow` | Allow this repo's `.aliprehook.yml` hooks |
 | `aliprehook revoke` | Stop allowing them |
 | `aliprehook key [--path <dir>]` | Print the project key for the current directory (or `<dir>`) |
-| `aliprehook hook new\|add\|rm\|ls …` | Manage hooks in `registry` ([11](#11-manage-hooks-and-commands)) |
-| `aliprehook command set\|rm\|ls …` | Manage per-project command lines in `commands` ([11](#11-manage-hooks-and-commands)) |
-| `aliprehook edit [<file>]` | Open `registry`, `commands`, `allowed` or `theme` in `$EDITOR` |
+| `aliprehook hook new\|add\|rm\|ls …` | Manage hooks in `hooks.map` ([11](#11-manage-hooks-and-commands)) |
+| `aliprehook command set\|rm\|ls …` | Manage per-project command lines in `commands.map` ([11](#11-manage-hooks-and-commands)) |
+| `aliprehook edit [<file>]` | Open `hooks.map`, `commands.map`, `allowed-repos` or `theme` in `$EDITOR` |
 | `aliprehook help` | Usage (also `aliprehook hook help`, `… --help` on every subcommand) |
 
 ## Uninstall
 
 ```sh
-./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps registry, allowed, commands, hooks/, theme
+./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps hooks.map, commands.map, allowed-repos, hooks/, theme-overrides (removes old-named registry, commands, allowed, theme)
 ```
 
 Then remove the `source` and `aliprehook_define` lines from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.

@@ -1,4 +1,4 @@
-# aliprehook per-project commands: run a different command line per project
+# aliprehook commands.map: run a different command line per project
 # behind the same name. Only for names defined with aliprehook_define (or
 # hand-written functions using aliprehook_command).
 #

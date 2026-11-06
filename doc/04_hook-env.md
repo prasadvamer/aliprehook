@@ -187,7 +187,7 @@ Dbuild runs
 
 ```sh
 #!/bin/sh
-# hooks/require_aws.sh   (registry: *  Dbuild  hooks/require_aws.sh)
+# hooks/require_aws.sh   (hooks.map: *  Dbuild  hooks/require_aws.sh)
 aliprehook_env_pass --required AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
 

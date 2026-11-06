@@ -25,7 +25,7 @@ Two different places config can live — owned by different people:
 
 | Layer | Where it lives | Who writes it | Purpose |
 |---|---|---|---|
-| **User layer** | `~/.config/aliprehook/` | You | *Your* commands (`Dup`), *your* registry, *your* hooks |
+| **User layer** | `~/.config/aliprehook/` | You | *Your* commands (`Dup`), *your* `hooks.map`, *your* hooks |
 | **Project layer** (optional) | Inside the git repo, e.g. `.aliprehook.yml` (+ optional scripts) | You or the team | Prep for *this* project (“before compose, copy `.env.example`”) |
 
 **Why both?**
@@ -39,7 +39,7 @@ Two different places config can live — owned by different people:
 ```text
 You type: Dup --watch
     │
-    ├─ 1) User layer: registry hook for (project key, Dup)? → run if any
+    ├─ 1) User layer: hooks.map hook for (project key, Dup)? → run if any
     ├─ 2) Project layer: only if this repo was allowed → hook from .aliprehook.yml for Dup?
     └─ 3) docker compose up --watch
 ```
@@ -51,12 +51,12 @@ If a hook exits non-zero, abort before the next step / main command.
 Allowed repos are recorded under the user layer, e.g.:
 
 ```text
-~/.config/aliprehook/allowed
+~/.config/aliprehook/allowed-repos
 # one normalized project key per line
 github.com/org/sample_app_web
 ```
 
-- `aliprehook allow` — add current project key to `allowed`
+- `aliprehook allow` — add current project key to `allowed-repos`
 - `aliprehook revoke` — remove it
 - No entry → skip project layer entirely (user layer still runs)
 
@@ -68,12 +68,33 @@ github.com/org/sample_app_web
 ~/.config/aliprehook/
   README.md            # how it works, setup, layers, allow, how to add a hook
   lib.zsh              # sourced from ~/.zshrc
-  registry             # user lookup table: project_key + command → hook
-  allowed              # project keys that may run project-layer hooks
+  hooks.map            # user lookup table: project_key + command → hook
+  commands.map         # per-project command lines: project_key + command → command line
+  allowed-repos        # project keys that may run project-layer hooks
+  theme-overrides      # optional color overrides
   hooks/               # user prehook scripts
     example_echo.sh    # initial example (safe; prints project key + cmd)
     sample_app_web_Dup.sh
 ```
+
+### File names
+
+Renamed in 0.x so each name says what it holds:
+
+| Old | Now | Holds |
+|---|---|---|
+| `registry` | `hooks.map` | project key + command → hook (every match runs) |
+| `commands` | `commands.map` | project key + command → command line (one runs) |
+| `allowed` | `allowed-repos` | repos whose `.aliprehook.yml` may run |
+| `theme` | `theme-overrides` | your color overrides on top of the chosen theme |
+| `hooks/` | `hooks/` (unchanged) | hook scripts |
+
+- `.map` for both lookup files: same shape (project key + command → something); `hooks.map` sits next to `hooks/`. Not `project-hooks` / `user-hooks`: "project hooks" already means the repo layer (`.aliprehook.yml`).
+- Formats, rules and permissions are unchanged. CLI nouns: `aliprehook edit hooks|commands|allowed|theme`.
+- **Migration (early development, single user):**
+  - `install.sh` renames an old file to its new name if the new one does not exist yet (never overwrites; prints what it renamed).
+  - `uninstall.sh` removes the old-named files and keeps the new ones.
+  - `lib.zsh` reads only the new names; if an old file is still there and the new one is missing, it warns once per shell: run `./install.sh` to rename it. No long-term fallback.
 
 ### Project layer (in a repo)
 
@@ -93,7 +114,7 @@ hooks:
   serve: .aliprehook/before_serve.sh
 ```
 
-Each key under `hooks:` must be a command name. A repo **cannot** define `*` (all-projects) hooks; those exist only in the user `registry`, so a repo can never run code in other projects.
+Each key under `hooks:` must be a command name. A repo **cannot** define `*` (all-projects) hooks; those exist only in the user `hooks.map`, so a repo can never run code in other projects.
 
 - `aliprehook allow` refuses a yml with a `*` (or otherwise invalid) entry and prints the line number.
 - If an allowed repo's yml later gains one, the entry is ignored and every run prints a warning; the repo's valid hooks still run.
@@ -105,7 +126,7 @@ Ships with the install so anyone opening `~/.config/aliprehook/` can learn the s
 1. **What aliprehook is** — optional prehooks; user + project layers
 2. **Setup** — `source` lib in `~/.zshrc`, then `aliprehook_define …`
 3. **Project key order** — origin → first remote → PWD + normalization
-4. **User registry** — three columns; commented examples
+4. **User hooks (`hooks.map`)** — three columns; commented examples
 5. **Project layer + allow** — `.aliprehook.yml`, `aliprehook allow` / `revoke`
 6. **How to add a user hook** — copy `example_echo.sh`, register, reload
 7. **Try the example** — register current repo to `example_echo.sh`, run, see echo
@@ -114,7 +135,7 @@ Ships with the install so anyone opening `~/.config/aliprehook/` can learn the s
 
 `hooks/example_echo.sh` is safe (no docker, no side effects): print that aliprehook ran, print project key and command name, exit 0.
 
-`registry` ships with a **commented** example line pointing at it.
+`hooks.map` ships with a **commented** example line pointing at it.
 
 ## How the project key is resolved
 
@@ -124,7 +145,7 @@ When you run an opt-in command, aliprehook picks a **project key** in this order
 2. **Else first remote** — first URL from `git remote -v` (fetch)
 3. **Else `$PWD`** — `pwd -P`
 
-For steps 1–2, the remote URL is **normalized** before lookup/compare. User `registry` and `allowed` store the **normalized** form.
+For steps 1–2, the remote URL is **normalized** before lookup/compare. User `hooks.map` and `allowed-repos` store the **normalized** form.
 
 ```mermaid
 flowchart TD
@@ -134,7 +155,7 @@ flowchart TD
   first{"Any other remote URL?"}
   norm["Normalize remote URL string"]
   pwdKey["Use pwd -P"]
-  done["Use key for user registry + allow check"]
+  done["Use key for `hooks.map` + allow check"]
 
   start --> inGit
   inGit -->|no| pwdKey --> done
@@ -161,7 +182,7 @@ Rules (in `lib.zsh`):
 - Drop trailing `.git` and trailing `/`
 - Lowercase host
 
-## User registry
+## User hooks (`hooks.map`)
 
 Plain text file under the user layer. Answers:
 
@@ -189,7 +210,7 @@ Rules:
 - **Order:** `*` lines first, then lines for the exact project key; within each group, file order.
 - **First failure stops everything:** later hooks, the project layer and the main command do not run.
 - `*` matches every project key (remote or path). It is the only wildcard; no partial patterns like `github.com/org/*`.
-- `*` lines live **only** in the user `registry` (`~/.config/aliprehook/registry`), with scripts in the user `hooks/`. A repo's `.aliprehook.yml` cannot define them (see § Project layer); the project layer applies only to its own repo.
+- `*` lines live **only** in the user `hooks.map` (`~/.config/aliprehook/hooks.map`), with scripts in the user `hooks/`. A repo's `.aliprehook.yml` cannot define them (see § Project layer); the project layer applies only to its own repo.
 - `*` replaces only the project key: the command column must still match. `*  Dup  …` runs before `Dup` everywhere, never before `serve`.
 - A command can have several `*` lines; all of them run, in file order, before the exact-key lines.
 - Duplicate lines (same key, command and hook) run once.
@@ -207,7 +228,7 @@ Run order for `Dup` in `sample_app_web`:
 
 Opting a project out of `*` hooks (e.g. `github.com/org/x  Dup  -`) is **not** planned yet; add it only if needed.
 
-### Example user `registry`
+### Example user `hooks.map`
 
 ```text
 # project_key  command  hook_relative_path
@@ -259,8 +280,8 @@ Dup() {
 What `aliprehook_run Dup` does each call:
 
 1. Resolve project key (origin → first remote → PWD, normalized)
-2. **User layer:** run every `registry` hook for `(*, Dup)`, then for `(key, Dup)`, in file order; first failure stops
-3. **Project layer:** if `key` is in `allowed` and `.aliprehook.yml` maps `Dup` → run that hook
+2. **User layer:** run every `hooks.map` hook for `(*, Dup)`, then for `(key, Dup)`, in file order; first failure stops
+3. **Project layer:** if `key` is in `allowed-repos` and `.aliprehook.yml` maps `Dup` → run that hook
 4. Return; caller then runs the main command
 
 ```mermaid
@@ -268,7 +289,7 @@ flowchart TD
   call["User runs cmd with args"]
   opt{"Defined via aliprehook_define or aliprehook_run?"}
   key["Resolve key: origin / first remote / PWD"]
-  user{"User registry match?"}
+  user{"hooks.map match?"}
   userHook["Run user hook"]
   allow{"Project key in allowed?"}
   proj{"Project yml maps cmd?"}
@@ -356,7 +377,7 @@ Full design, issues and open decisions: [04_hook-env.md](./04_hook-env.md).
 
 > Implemented (roadmap Phase 7). Full design: [06_commands.md](./06_commands.md).
 
-The same command name can run a **different command line per project**. You always type `Dbuild`; the line in `~/.config/aliprehook/commands` decides what runs:
+The same command name can run a **different command line per project**. You always type `Dbuild`; the line in `~/.config/aliprehook/commands.map` decides what runs:
 
 ```text
 # project_key                     command  what runs (rest of the line, shell syntax)
@@ -365,11 +386,11 @@ github.com/org/legacy_app         Dbuild   make docker-build
 ```
 
 - Which command runs: this project's line, else the `aliprehook_define` default. Exactly one runs.
-- No `*` in `commands`: the default for all other projects is the `aliprehook_define` command (a `*` line is an error and the command does not run).
-- The `commands` file is checked first (errors stop before any hook); then prehooks run as usual and the line can use variables they passed.
+- No `*` in `commands.map`: the default for all other projects is the `aliprehook_define` command (a `*` line is an error and the command does not run).
+- The `commands.map` file is checked first (errors stop before any hook); then prehooks run as usual and the line can use variables they passed.
 - The line is shell syntax (`VAR=… cmd`, `$(…)`, `&&`), run in a subshell so it cannot change your terminal.
 - Your arguments are appended, unless the line places `"$@"` itself.
-- User layer only: repos cannot define commands; a group- or world-writable `commands` file is refused.
+- User layer only: repos cannot define commands; a group- or world-writable `commands.map` file is refused.
 
 ## lib.zsh responsibilities
 
@@ -379,9 +400,9 @@ github.com/org/legacy_app         Dbuild   make docker-build
 - `aliprehook_define [--keep-env] <name> <command...>` — function wrapper around `aliprehook_run` + command
 - `aliprehook_with_env [--keep-env] <command...>` — run a command with the variables hooks wrote to `ALIPREHOOK_ENV_FILE` (Case B functions; `aliprehook_define` wrappers declare them directly so aliases still work)
 - `bin/aliprehook_env_pass` (POSIX sh command, on every hook's `PATH`) — `aliprehook_env_pass [--allow-empty] [--hint TEXT] [NAME|NAME=value...] [--required NAME... ] [--optional NAME...]` (`--hint`: see [04_hook-env.md](./04_hook-env.md) § Fix hint)
-- `aliprehook allow` / `aliprehook revoke` — manage `allowed` for current project key
-- `commands` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
-- `aliprehook hook new|add|rm|ls`, `aliprehook command set|rm|ls`, `aliprehook edit`, `aliprehook key [--path]` — manage `registry` / `commands` for the current project key without hand-written lines (see [07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md))
+- `aliprehook allow` / `aliprehook revoke` — manage `allowed-repos` for current project key
+- `commands.map` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
+- `aliprehook hook new|add|rm|ls`, `aliprehook command set|rm|ls`, `aliprehook edit`, `aliprehook key [--path]` — manage `hooks.map` / `commands.map` for the current project key without hand-written lines (see [07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks
@@ -389,7 +410,7 @@ github.com/org/legacy_app         Dbuild   make docker-build
 ### User layer
 
 1. Write `~/.config/aliprehook/hooks/<name>.sh`, `chmod +x`
-2. Add a `registry` line: normalized key, command, hook path
+2. Add a `hooks.map` line: normalized key, command, hook path
 3. Command must use `aliprehook_define` or call `aliprehook_run`
 
 ### Project layer
@@ -398,7 +419,7 @@ github.com/org/legacy_app         Dbuild   make docker-build
 2. From that repo: `aliprehook allow`
 3. Same opt-in command names (`Dup`, etc.) as in the yml keys
 
-No user registry line and no allowed project hook → command still runs normally.
+No `hooks.map` line and no allowed project hook → command still runs normally.
 
 ## Converting an existing `.zshrc` function
 
@@ -436,9 +457,9 @@ Same as B: `aliprehook_run` first, then your logic.
 
 ## Implementation checklist
 
-1. Create user layer: `~/.config/aliprehook/{README.md,lib.zsh,registry,allowed,hooks/}`
+1. Create user layer: `~/.config/aliprehook/{README.md,lib.zsh,hooks.map,commands.map,allowed-repos,hooks/}`
 2. Write `README.md` covering setup, key resolution, both layers, allow, example hook
-3. Implement normalize, project key, user registry lookup, project yml lookup, allow/revoke, `aliprehook_run`, `aliprehook_define`
-4. Add `hooks/example_echo.sh` + commented user registry line
+3. Implement normalize, project key, `hooks.map` lookup, project yml lookup, allow/revoke, `aliprehook_run`, `aliprehook_define`
+4. Add `hooks/example_echo.sh` + commented `hooks.map` line
 5. Document example `.aliprehook.yml` in README (optional stub in a personal test repo)
 6. Wire `source` + `aliprehook_define Dup docker compose up` into `~/.zshrc`

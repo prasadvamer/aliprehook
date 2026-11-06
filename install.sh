@@ -23,8 +23,18 @@ for f in lib.zsh README.md bin/aliprehook_env_pass themes/purple.theme themes/no
   fi
 done
 
+# Renamed user files (0.x): move an old file to its new name if the new one
+# does not exist yet. Never overwrites.
+for pair in registry:hooks.map commands:commands.map allowed:allowed-repos theme:theme-overrides; do
+  old=${pair%%:*} new=${pair#*:}
+  if [ -f "$dest/$old" ] && [ ! -e "$dest/$new" ]; then
+    mv "$dest/$old" "$dest/$new"
+    echo "renamed $dest/$old -> $new"
+  fi
+done
+
 # User data: create if missing, never overwrite.
-for f in registry allowed commands; do
+for f in hooks.map allowed-repos commands.map; do
   [ -e "$dest/$f" ] || { cp "$src/templates/$f" "$dest/$f" && chmod go-w "$dest/$f"; }
 done
 [ -e "$dest/hooks/example_echo.sh" ] || cp "$src/hooks/example_echo.sh" "$dest/hooks/example_echo.sh"

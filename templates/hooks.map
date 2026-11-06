@@ -1,4 +1,4 @@
-# aliprehook user registry: which hooks run before which command, per project.
+# aliprehook hooks.map: which hooks run before which command, per project.
 #
 # Columns (whitespace-separated):
 #   project_key  command  hook_relative_path
