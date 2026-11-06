@@ -74,7 +74,7 @@ aliprehook command set Dbuild 'DOCKER_BUILDKIT=1 REVISION=$(git rev-parse --shor
 
 | Command | Does |
 |---|---|
-| `aliprehook edit [hooks\|commands\|allowed\|theme]` | Open the file in `$EDITOR` (default `hooks.map`) |
+| `aliprehook edit [hooks\|commands\|allowed\|theme\|settings]` | Open the file in `$EDITOR` (default `hooks.map`) |
 | `aliprehook key [--path <dir>]` | Print the project key for the current directory, or for `<dir>` |
 
 ## Choosing the project

@@ -373,6 +373,7 @@ aliprehook messages are colored with a purple theme. Each color has one meaning:
 | Blue | Where: project key or path | `github.com/org/sample_app_web` |
 | Bold | A variable name | `API_TOKEN` |
 | Grey | How to fix it | `(run: chmod +x …)` |
+| Grey | What aliprehook did (run summary, see 12.) | `Dup · hooks: aws_login.sh` |
 
 `warning:` and `error:` are always written out, so the meaning never depends on color.
 
@@ -394,7 +395,7 @@ hook=35      # magenta hook names
 key=1;34     # bold blue paths
 ```
 
-Roles: `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`, `var`, `hint`. Values are ANSI codes (the part between `ESC[` and `m`, e.g. `31` red, `1;32` bold green, `38;5;177` 256-color); empty means default color.
+Roles: `brand`, `info`, `success`, `warning`, `error`, `command`, `hook`, `key`, `var`, `hint`, `trace`. Values are ANSI codes (the part between `ESC[` and `m`, e.g. `31` red, `1;32` bold green, `38;5;177` 256-color); empty means default color.
 
 For a complete theme of your own, copy `themes/purple.theme`, edit it, and set `ALIPREHOOK_THEME=/path/to/my.theme`. Theme files are read as plain `role=code` lines, never executed. Design: [doc/05_theme.md](./doc/05_theme.md).
 
@@ -460,7 +461,7 @@ aliprehook command set Dbuild 'DOCKER_BUILDKIT=1 docker compose -f docker-compos
 aliprehook command rm Dbuild                # back to the aliprehook_define default
 aliprehook command ls
 
-aliprehook edit [hooks|commands|allowed|theme]   # open the file in $EDITOR
+aliprehook edit [hooks|commands|allowed|theme|settings]   # open the file in $EDITOR
 ```
 
 **Choosing the project** (at most one):
@@ -478,6 +479,43 @@ aliprehook edit [hooks|commands|allowed|theme]   # open the file in $EDITOR
 - Help without the README: `aliprehook help`, `aliprehook hook help`, `aliprehook command help`, and `--help` on every subcommand (`aliprehook hook new --help`).
 
 Design: [doc/07_cli-manage-hooks-and-commands.md](./doc/07_cli-manage-hooks-and-commands.md).
+
+## 12. See what aliprehook did
+
+Before your command runs, aliprehook prints one grey line on stderr saying what it did, **only if it did something**:
+
+```text
+aliprehook: Dbuild · hooks: all_Dbuild.sh (*), aws_login.sh · env: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN · command: commands.map:3
+```
+
+- `hooks:` the hooks that ran, in order: `(*)` for `*` lines, `(project)` for the repo's hook
+- `env:` names of the variables passed to the command (never values); `(kept)` for names kept in the shell by `--keep-env`
+- `command:` the `commands.map` line used (nothing for the `aliprehook_define` default)
+- No hooks, no variables, default command → no line. A failing hook prints its `error:` instead.
+
+Choose how much you see:
+
+```zsh
+aliprehook verbose                 # show the level and where it comes from
+aliprehook verbose detail          # save it (all shells): every step, skipped steps and why, the command line
+aliprehook verbose quiet           # nothing (errors and warnings still print)
+aliprehook verbose summary         # the default
+aliprehook verbose detail --shell  # this shell only
+aliprehook verbose --reset         # remove the saved level
+ALIPREHOOK_VERBOSE=detail Dbuild   # one run only
+```
+
+```text
+$ ALIPREHOOK_VERBOSE=detail Dbuild --no-cache
+aliprehook: Dbuild in github.com/org/sample_app_web
+aliprehook:   hook all_Dbuild.sh (*)
+aliprehook:   hook aws_login.sh
+aliprehook:     passed AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN
+aliprehook:   project hook: skipped (repo not allowed; run: aliprehook allow)
+aliprehook:   command (commands.map:3): DOCKER_BUILDKIT=1 docker compose -f docker-compose.dev.yml build --no-cache
+```
+
+The level is saved in `~/.config/aliprehook/settings` (`verbose=detail`). `ALIPREHOOK_VERBOSE` wins over it; `aliprehook verbose` tells you when it does. The color is the theme role `trace` (grey by default; e.g. `trace=2` in `theme-overrides` for dim). Design: [doc/08_run-summary.md](./doc/08_run-summary.md).
 
 ## Converting existing `.zshrc` functions
 
@@ -531,13 +569,14 @@ Dclear() {
 | `aliprehook key [--path <dir>]` | Print the project key for the current directory (or `<dir>`) |
 | `aliprehook hook new\|add\|rm\|ls …` | Manage hooks in `hooks.map` ([11](#11-manage-hooks-and-commands)) |
 | `aliprehook command set\|rm\|ls …` | Manage per-project command lines in `commands.map` ([11](#11-manage-hooks-and-commands)) |
-| `aliprehook edit [<file>]` | Open `hooks.map`, `commands.map`, `allowed-repos` or `theme` in `$EDITOR` |
+| `aliprehook edit [<file>]` | Open `hooks.map`, `commands.map`, `allowed-repos`, `theme-overrides` or `settings` in `$EDITOR` |
+| `aliprehook verbose [<level>] [--shell] [--reset]` | Show or set the run summary level ([12](#12-see-what-aliprehook-did)) |
 | `aliprehook help` | Usage (also `aliprehook hook help`, `… --help` on every subcommand) |
 
 ## Uninstall
 
 ```sh
-./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps hooks.map, commands.map, allowed-repos, hooks/, theme-overrides (removes old-named registry, commands, allowed, theme)
+./uninstall.sh   # removes lib.zsh, README.md, bin/, themes/; keeps hooks.map, commands.map, allowed-repos, hooks/, theme-overrides, settings (removes old-named registry, commands, allowed, theme)
 ```
 
 Then remove the `source` and `aliprehook_define` lines from `~/.zshrc`. For full removal: `rm -rf ~/.config/aliprehook`.

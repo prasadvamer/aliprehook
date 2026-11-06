@@ -97,12 +97,12 @@ _aliprehook_msg() {
   level=$1
   shift
   if [[ -z $fd ]]; then
-    [[ $level == (warning|error) ]] && fd=2 || fd=1
+    [[ $level == (warning|error|trace) ]] && fd=2 || fd=1
   fi
   _aliprehook_theme_ensure
   _aliprehook_color_on $fd && color=1
   tcode=
-  [[ $level == (warning|error) ]] && tcode=${_aliprehook_theme[$level]-}
+  [[ $level == (warning|error|trace) ]] && tcode=${_aliprehook_theme[$level]-}
 
   _aliprehook_paint "${_aliprehook_theme[brand]-}" aliprehook:
   out+=' '
@@ -192,6 +192,7 @@ aliprehook_project_key() {
 # `*` lines first, then lines for the exact key; file order within each group.
 # The same (key, command, hook) line listed twice is printed once.
 # Relative paths are under ALIPREHOOK_HOME. Returns 1 if nothing matches.
+# --mark (3rd argument): print "*<TAB>path" for * lines, "<TAB>path" otherwise.
 aliprehook_registry_lookup() {
   emulate -L zsh -o extended_glob
   local key=$1 cmd=$2 k c h id
@@ -217,7 +218,11 @@ aliprehook_registry_lookup() {
   done < $registry
 
   (( $#common + $#exact )) || return 1
-  print -rl -- $common $exact
+  if [[ $3 == --mark ]]; then
+    print -rl -- ${common/#/*$'\t'} ${exact/#/$'\t'}
+  else
+    print -rl -- $common $exact
+  fi
 }
 
 # Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed-repos.
@@ -323,7 +328,8 @@ _aliprehook_project_commands_warn() {
 
 # --- Per-project commands ---------------------------------------------------
 # ALIPREHOOK_HOME/commands.map: "project_key  command  rest-of-line (shell syntax)".
-# Print the line for <cmd> in the current project. Exit 0 if found, 1 if none
+# Print "<line number><TAB><command line>" for <cmd> in the current project.
+# Exit 0 if found, 1 if none
 # (use the default), 2 on an error (already reported; do not run anything).
 _aliprehook_command_lookup() {
   emulate -L zsh -o extended_glob
@@ -376,7 +382,7 @@ _aliprehook_command_lookup() {
     return 2
   fi
   (( at )) || return 1
-  print -r -- $found
+  print -r -- "$at"$'\t'"$found"
 }
 
 # Run command line <line> in a subshell with the remaining arguments: appended
@@ -418,8 +424,9 @@ aliprehook_command() {
   (( $? < 2 )) || return 1
   _aliprehook_env_decl $_aliprehook_keep
   eval "$_aliprehook_env_code"
+  _aliprehook_trace_command $_aliprehook_name "$_aliprehook_line" "${(j: :)${(q-)_aliprehook_def}}" "$@"
   if [[ -n $_aliprehook_line ]]; then
-    _aliprehook_command_eval "$_aliprehook_line" "$@"
+    _aliprehook_command_eval "${_aliprehook_line#*$'\t'}" "$@"
   else
     "${_aliprehook_def[@]}" "$@"
   fi
@@ -453,9 +460,10 @@ _aliprehook_env_load() {
   emulate -L zsh -o extended_glob
   local layer=$1 cmd=$2 hook=$3 file=$4 line name value delim pat
   integer n=0 closed
-  local -a missing
+  local -a missing order
   local -A vars
 
+  _aliprehook_last_passed=()
   [[ -s $file ]] || return 0
   if (( $(command wc -c < $file) > _aliprehook_env_max_bytes )); then
     _aliprehook_msg error "@hook=${hook:t}" ": ALIPREHOOK_ENV_FILE is larger than $_aliprehook_env_max_bytes bytes"
@@ -501,6 +509,7 @@ _aliprehook_env_load() {
         fi
       done
     fi
+    (( ${+vars[$name]} )) || order+=($name)
     vars[$name]=$value
   done < $file
 
@@ -520,6 +529,7 @@ _aliprehook_env_load() {
       _aliprehook_env_project[$name]=$vars[$name]
     fi
   done
+  _aliprehook_last_passed=($order)
   return 0
 }
 
@@ -579,6 +589,110 @@ _aliprehook_exec() {
   }
 }
 
+# --- Run summary (ALIPREHOOK_VERBOSE / settings) -----------------------------
+# Design: doc/08_run-summary.md. What the current run did, for the summary line.
+typeset -g _aliprehook_trace_level=summary _aliprehook_trace_source=default
+typeset -ga _aliprehook_trace_hooks _aliprehook_trace_env _aliprehook_trace_kept _aliprehook_last_passed
+typeset -gA _aliprehook_settings _aliprehook_verbose_warned
+
+# Load ALIPREHOOK_HOME/settings (name=value lines, parsed, never sourced).
+# Read on every command (a tiny file), so a save from another shell applies
+# right away; mtime alone misses two saves within one second.
+_aliprehook_settings_load() {
+  emulate -L zsh -o extended_glob
+  local file=$ALIPREHOOK_HOME/settings line
+  _aliprehook_settings=()
+  [[ -r $file ]] || return 0
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    [[ $line == [[:space:]]#(#b)([a-z_]##)[[:space:]]#=[[:space:]]#(*) ]] || continue
+    _aliprehook_settings[$match[1]]=${match[2]%%[[:space:]]#}
+  done < $file
+}
+
+# Set _aliprehook_trace_level / _aliprehook_trace_source:
+# ALIPREHOOK_VERBOSE → settings (verbose=) → summary.
+_aliprehook_verbose_resolve() {
+  emulate -L zsh
+  local v src
+  if [[ -n ${ALIPREHOOK_VERBOSE-} ]]; then
+    v=$ALIPREHOOK_VERBOSE src=env
+  else
+    _aliprehook_settings_load
+    v=${_aliprehook_settings[verbose]-} src=settings
+    [[ -n $v ]] || v=summary src=default
+  fi
+  if [[ $v != (quiet|summary|detail) ]]; then
+    if (( ! ${+_aliprehook_verbose_warned[$src:$v]} )); then
+      _aliprehook_verbose_warned[$src:$v]=1
+      local where=ALIPREHOOK_VERBOSE
+      [[ $src == settings ]] && where=$ALIPREHOOK_HOME/settings
+      _aliprehook_msg warning "invalid verbose level '$v' in " "@key=$where" "; using summary " "@hint=(levels: quiet, summary, detail)"
+    fi
+    v=summary
+  fi
+  _aliprehook_trace_level=$v _aliprehook_trace_source=$src
+}
+
+# One trace line (theme role `trace`, stderr).
+_aliprehook_trace() { _aliprehook_msg trace "$@"; }
+_aliprehook_trace_detail() { [[ $_aliprehook_trace_level == detail ]] && _aliprehook_msg trace "$@"; return 0; }
+
+# Remember names passed by the last hook (run order, once each).
+_aliprehook_trace_add_passed() {
+  local n
+  for n in $_aliprehook_last_passed; do
+    (( ${_aliprehook_trace_env[(Ie)$n]} )) || _aliprehook_trace_env+=($n)
+  done
+  if (( $#_aliprehook_last_passed )); then
+    _aliprehook_trace_detail "    passed ${(j:, :)_aliprehook_last_passed}"
+  fi
+}
+
+# Summary line for <cmd> [command source], level summary only; then the
+# collected state is cleared so it is reported once.
+_aliprehook_trace_summary() {
+  emulate -L zsh
+  local cmd=$1 src=$2 n
+  local -a parts names
+  if [[ $_aliprehook_trace_level == summary ]]; then
+    (( $#_aliprehook_trace_hooks )) && parts+=("hooks: ${(j:, :)_aliprehook_trace_hooks}")
+    for n in $_aliprehook_trace_env; do
+      (( ${_aliprehook_trace_kept[(Ie)$n]} )) && names+=("$n (kept)") || names+=($n)
+    done
+    (( $#names )) && parts+=("env: ${(j:, :)names}")
+    [[ -n $src ]] && parts+=("command: $src")
+    (( $#parts )) && _aliprehook_trace "$cmd · ${(j: · :)parts}"
+  fi
+  _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
+  return 0
+}
+
+# Before the main command runs: summary (summary level) or the command line
+# (detail level). <lookup> is "<line no><TAB><line>" from commands.map or
+# empty; <default> the aliprehook_define command; then the arguments.
+_aliprehook_trace_command() {
+  emulate -L zsh
+  local cmd=$1 lookup=$2 def=$3 line src
+  shift 3
+  [[ -n $lookup ]] && src=commands.map:${lookup%%$'\t'*} line=${lookup#*$'\t'}
+  if [[ $_aliprehook_trace_level == detail ]]; then
+    (( $#_aliprehook_trace_kept )) && _aliprehook_trace "  kept in shell: ${(j:, :)_aliprehook_trace_kept}"
+    if [[ -n $line ]]; then
+      case $line in
+        (*'$@'*|*'${@}'*|*'$*'*|*'${*}'*)
+          _aliprehook_trace "  command ($src): $line${@:+  [arguments: ${(j: :)${(q-)@}}]}" ;;
+        (*) _aliprehook_trace "  command ($src): $line${@:+ ${(j: :)${(q-)@}}}" ;;
+      esac
+    else
+      _aliprehook_trace "  command (default): $def${@:+ ${(j: :)${(q-)@}}}"
+    fi
+    _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
+  else
+    _aliprehook_trace_summary $cmd $src
+  fi
+}
+
 # Files renamed in 0.x: warn once per shell if an old one is still there
 # without its new name (install.sh renames them). Old files are not read.
 typeset -g _aliprehook_old_names_warned=
@@ -606,19 +720,33 @@ aliprehook_run() {
 
   key=$(aliprehook_project_key)
   _aliprehook_env_user=() _aliprehook_env_project=() _aliprehook_env=()
+  _aliprehook_verbose_resolve
+  _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
+  _aliprehook_trace_detail "$cmd in $key"
 
   # User layer: every matching hooks.map hook, in order; first failure stops.
   local -a hooks
-  hooks=("${(@f)$(aliprehook_registry_lookup $key $cmd)}")
-  for hook in $hooks; do
-    [[ -n $hook ]] || continue
+  local entry label
+  hooks=("${(@f)$(aliprehook_registry_lookup $key $cmd --mark)}")
+  [[ -n ${hooks[1]} ]] || _aliprehook_trace_detail "  hooks.map: no hooks for $cmd here"
+  for entry in $hooks; do
+    [[ -n $entry ]] || continue
+    hook=${entry#*$'\t'}
+    label=${hook:t}
+    [[ $entry == '*'$'\t'* ]] && label+=' (*)'
+    _aliprehook_trace_detail "  hook $label"
     _aliprehook_exec user $key $cmd $hook "$@" || return $?
+    _aliprehook_trace_hooks+=($label)
+    _aliprehook_trace_add_passed
   done
 
   _aliprehook_run_project $key $cmd "$@" || return $?
 
   # For the main command: user values win over project values.
   _aliprehook_env=("${(@kv)_aliprehook_env_project}" "${(@kv)_aliprehook_env_user}")
+
+  # aliprehook_define wrappers report once, right before the command runs.
+  [[ ${_aliprehook_trace_defer-} == "$cmd" ]] || _aliprehook_trace_summary $cmd
   return 0
 }
 
@@ -628,9 +756,19 @@ _aliprehook_run_project() {
   local key=$1 cmd=$2 root rel hook
   shift 2
 
-  root=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
-  [[ -n $root && -f $root/.aliprehook.yml ]] || return 0
-  aliprehook_is_allowed $key || return 0
+  root=$(command git rev-parse --show-toplevel 2>/dev/null)
+  if [[ -z $root ]]; then
+    _aliprehook_trace_detail "  project hook: none (not a git repo)"
+    return 0
+  fi
+  if [[ ! -f $root/.aliprehook.yml ]]; then
+    _aliprehook_trace_detail "  project hook: none (no .aliprehook.yml)"
+    return 0
+  fi
+  if ! aliprehook_is_allowed $key; then
+    _aliprehook_trace_detail "  project hook: skipped (repo not allowed; run: aliprehook allow)"
+    return 0
+  fi
   _aliprehook_project_commands_warn $root
   local problems
   if ! problems=$(aliprehook_project_check $root); then
@@ -640,7 +778,10 @@ _aliprehook_run_project() {
     done
     _aliprehook_msg warning "invalid entries ignored; fix " "@key=$root/.aliprehook.yml"
   fi
-  rel=$(aliprehook_project_lookup $root $cmd) || return 0
+  if ! rel=$(aliprehook_project_lookup $root $cmd); then
+    _aliprehook_trace_detail "  project hook: none for $cmd in .aliprehook.yml"
+    return 0
+  fi
 
   root=${root:A}
   if [[ $rel == /* ]]; then
@@ -652,7 +793,10 @@ _aliprehook_run_project() {
     _aliprehook_msg error "project hook outside the repo: " "@key=$rel"
     return 1
   fi
-  ALIPREHOOK_PROJECT_ROOT=$root _aliprehook_exec project $key $cmd $hook "$@"
+  _aliprehook_trace_detail "  project hook $rel"
+  ALIPREHOOK_PROJECT_ROOT=$root _aliprehook_exec project $key $cmd $hook "$@" || return $?
+  _aliprehook_trace_hooks+=("${hook:t} (project)")
+  _aliprehook_trace_add_passed
 }
 
 # Build shell code in $_aliprehook_env_code that declares the variables hooks
@@ -665,8 +809,10 @@ _aliprehook_env_decl() {
   local keep=0 k
   [[ $1 == --keep-env ]] && keep=1
   local -a code
+  _aliprehook_trace_kept=()
   for k in ${(k)_aliprehook_env}; do
     if (( keep && ${+_aliprehook_env_user[$k]} )); then
+      _aliprehook_trace_kept+=($k)
       code+=("typeset -gx ${(q)k}=${(q)_aliprehook_env[$k]}")
     else
       code+=("local -x ${(q)k}=${(q)_aliprehook_env[$k]}")
@@ -687,6 +833,11 @@ aliprehook_with_env() {
     _aliprehook_env_decl
   fi
   eval "$_aliprehook_env_code"
+  if [[ $_aliprehook_trace_level == detail ]]; then
+    (( $#_aliprehook_trace_kept )) && _aliprehook_trace "  kept in shell: ${(j:, :)_aliprehook_trace_kept}"
+    _aliprehook_trace "  command: ${(j: :)${(q-)@}}"
+  fi
+  _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
   "$@"
 }
 
@@ -702,8 +853,9 @@ _aliprehook_usage=(
   'command set'    "aliprehook command set <cmd> '<command line>' [--key <key> | --path <dir>]"
   'command rm'     'aliprehook command rm <cmd> [--key <key> | --path <dir>]'
   'command ls'     'aliprehook command ls [--key <key> | --path <dir>]'
-  'edit'           'aliprehook edit [hooks|commands|allowed|theme]'
+  'edit'           'aliprehook edit [hooks|commands|allowed|theme|settings]'
   'key'            'aliprehook key [--path <dir>]'
+  'verbose'        'aliprehook verbose [quiet|summary|detail] [--shell] [--reset]'
 )
 
 _aliprehook_help_project() {
@@ -728,7 +880,8 @@ _aliprehook_help() {
   key [--path <dir>]    print the project key (here, or for <dir>)
   hook new|add|rm|ls    manage hooks in hooks.map           (aliprehook hook help)
   command set|rm|ls     manage per-project command lines in commands.map (aliprehook command help)
-  edit [<file>]         open hooks.map, commands.map, allowed-repos or theme-overrides in \$EDITOR
+  edit [<file>]         open hooks.map, commands.map, allowed-repos, theme-overrides or settings in \$EDITOR
+  verbose [<level>]     show or set what aliprehook prints about a run (quiet, summary, detail)
   help                  this help
 
 Every subcommand takes --help, e.g. aliprehook hook new --help"
@@ -837,9 +990,26 @@ example: aliprehook command ls --path ~/src/sample_app_web"
 
 Open a file of ${ALIPREHOOK_HOME/#$HOME/~}/ in \$VISUAL / \$EDITOR:
   hooks → hooks.map (default), commands → commands.map,
-  allowed → allowed-repos, theme → theme-overrides
+  allowed → allowed-repos, theme → theme-overrides, settings → settings
 
 example: aliprehook edit commands"
+      ;;
+    verbose)
+      print -r -- "usage: $_aliprehook_usage[verbose]
+
+What aliprehook prints about a run (on stderr, never variable values):
+  quiet     nothing (errors and warnings still print)
+  summary   one line before the command, only if hooks ran, variables were
+            passed or the command came from commands.map (default)
+  detail    every step as it happens, skipped steps and why, the command line
+
+  (no level)  show the current level and where it comes from
+  <level>     save it in ${ALIPREHOOK_HOME/#$HOME/~}/settings (all shells)
+  --shell     this shell only (sets ALIPREHOOK_VERBOSE)
+  --reset     remove the saved level (with --shell: unset ALIPREHOOK_VERBOSE)
+For one run: ALIPREHOOK_VERBOSE=detail <cmd>
+
+example: aliprehook verbose detail"
       ;;
     key)
       print -r -- "usage: $_aliprehook_usage[key]
@@ -1370,10 +1540,95 @@ _aliprehook_cli_edit() {
     commands) f=commands.map ;;
     allowed) f=allowed-repos ;;
     theme) f=theme-overrides ;;
-    *) _aliprehook_cli_bad edit "unknown file: $pos[1] (hooks, commands, allowed, theme)"; return 2 ;;
+    settings) f=settings ;;
+    *) _aliprehook_cli_bad edit "unknown file: $pos[1] (hooks, commands, allowed, theme, settings)"; return 2 ;;
   esac
   command mkdir -p -- $ALIPREHOOK_HOME
   ${=${VISUAL:-${EDITOR:-vi}}} $ALIPREHOOK_HOME/$f
+}
+
+_aliprehook_cli_verbose() {
+  emulate -L zsh -o extended_glob
+  local -A opts
+  local -a pos lines keep
+  local file=$ALIPREHOOK_HOME/settings level line saved
+  _aliprehook_cli_args verbose 'shell reset' "$@" || return 2
+  if (( ${+opts[help]} )); then
+    _aliprehook_help verbose
+    return 0
+  fi
+  (( $#pos <= 1 )) || { _aliprehook_cli_bad verbose "expected at most one level"; return 2; }
+  level=$pos[1]
+  if [[ -n $level && $level != (quiet|summary|detail) ]]; then
+    _aliprehook_cli_bad verbose "unknown level: $level (quiet, summary, detail)"
+    return 2
+  fi
+  if (( ${+opts[reset]} )) && [[ -n $level ]]; then
+    _aliprehook_cli_bad verbose "--reset takes no level"
+    return 2
+  fi
+  _aliprehook_settings_load
+  saved=${_aliprehook_settings[verbose]-}
+
+  # Show.
+  if [[ -z $level ]] && (( ! ${+opts[reset]} )); then
+    if (( ${+opts[shell]} )); then
+      _aliprehook_cli_bad verbose "--shell needs a level (or --reset)"
+      return 2
+    fi
+    _aliprehook_verbose_resolve
+    case $_aliprehook_trace_source in
+      env) print -r -- "$_aliprehook_trace_level (from ALIPREHOOK_VERBOSE)" ;;
+      settings) print -r -- "$_aliprehook_trace_level (from $(_aliprehook_tilde $file))" ;;
+      *) print -r -- "$_aliprehook_trace_level (default)" ;;
+    esac
+    if [[ $_aliprehook_trace_source == env && -n $saved ]]; then
+      _aliprehook_msg warning "saved level $saved in " "@key=$(_aliprehook_tilde $file)" " is hidden by ALIPREHOOK_VERBOSE=$ALIPREHOOK_VERBOSE " "@hint=(run: unset ALIPREHOOK_VERBOSE)"
+    fi
+    return 0
+  fi
+
+  # This shell only.
+  if (( ${+opts[shell]} )); then
+    if (( ${+opts[reset]} )); then
+      unset ALIPREHOOK_VERBOSE
+      _aliprehook_verbose_resolve
+      _aliprehook_msg success "ALIPREHOOK_VERBOSE unset in this shell; level is $_aliprehook_trace_level ($_aliprehook_trace_source)"
+    else
+      typeset -gx ALIPREHOOK_VERBOSE=$level
+      _aliprehook_msg success "verbose level is now $level in this shell only"
+    fi
+    return 0
+  fi
+
+  # Save or reset in the settings file (other lines kept).
+  _aliprehook_read_lines $file
+  local placed=0
+  for line in "${lines[@]}"; do
+    if [[ $line == [[:space:]]#verbose[[:space:]]#=* ]]; then
+      if [[ -n $level ]] && (( ! placed )); then
+        keep+=("verbose=$level")
+        placed=1
+      fi
+      continue
+    fi
+    keep+=("$line")
+  done
+  if [[ -n $level ]]; then
+    (( placed )) || keep+=("verbose=$level")
+  elif [[ -z $saved ]]; then
+    _aliprehook_msg info "no saved level; level is the default (summary)"
+    return 0
+  fi
+  _aliprehook_write_lines $file "${keep[@]}" || { _aliprehook_msg error "cannot write " "@key=$file"; return 1; }
+  if [[ -n $level ]]; then
+    _aliprehook_msg success "verbose level is now $level (saved in " "@key=$(_aliprehook_tilde $file)" ")"
+  else
+    _aliprehook_msg success "saved level removed; level is the default (summary)"
+  fi
+  if [[ -n ${ALIPREHOOK_VERBOSE-} ]]; then
+    _aliprehook_msg warning "ALIPREHOOK_VERBOSE=$ALIPREHOOK_VERBOSE overrides it in this shell " "@hint=(run: unset ALIPREHOOK_VERBOSE)"
+  fi
 }
 
 _aliprehook_cli_keycmd() {
@@ -1394,7 +1649,7 @@ _aliprehook_cli_keycmd() {
   fi
 }
 
-# aliprehook allow | revoke | key | hook | command | edit | help
+# aliprehook allow | revoke | key | hook | command | edit | verbose | help
 aliprehook() {
   emulate -L zsh -o extended_glob
   local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed-repos tmp line
@@ -1443,6 +1698,7 @@ aliprehook() {
     hook) _aliprehook_cli_hook "$@" ;;
     command) _aliprehook_cli_command "$@" ;;
     edit) _aliprehook_cli_edit "$@" ;;
+    verbose) _aliprehook_cli_verbose "$@" ;;
     help|-h|--help|'')
       _aliprehook_help
       ;;
@@ -1479,13 +1735,14 @@ aliprehook_define() {
   # Calling the same name inside the wrapper would recurse.
   [[ $1 == $name ]] && set -- command "$@"
 
-  body="local _aliprehook_line
+  body="local _aliprehook_line _aliprehook_trace_defer=${(q)name}
   _aliprehook_line=\$(_aliprehook_command_lookup ${(q)name})
   (( \$? < 2 )) || return 1
   aliprehook_run ${(q)name} \"\$@\" || return \$?
   _aliprehook_env_decl $keep; eval \"\$_aliprehook_env_code\"
+  _aliprehook_trace_command ${(q)name} \"\$_aliprehook_line\" ${(q)${(j: :)${(q-)@}}} \"\$@\"
   if [[ -n \$_aliprehook_line ]]; then
-    _aliprehook_command_eval \"\$_aliprehook_line\" \"\$@\"
+    _aliprehook_command_eval \"\${_aliprehook_line#*\$'\\t'}\" \"\$@\"
   else
     ${(j: :)${(q)@}} \"\$@\"
   fi"

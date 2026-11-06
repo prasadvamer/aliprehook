@@ -2,6 +2,9 @@
 
 typeset -gi ALIPREHOOK_TEST_FAILS=0
 
+# Run summary off by default; tests/test_trace.zsh covers it.
+export ALIPREHOOK_VERBOSE=quiet
+
 fail() {
   print -u2 "  FAIL: $*"
   (( ALIPREHOOK_TEST_FAILS++ ))

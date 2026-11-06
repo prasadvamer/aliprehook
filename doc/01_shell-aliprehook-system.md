@@ -403,6 +403,7 @@ github.com/org/legacy_app         Dbuild   make docker-build
 - `aliprehook allow` / `aliprehook revoke` — manage `allowed-repos` for current project key
 - `commands.map` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
 - `aliprehook hook new|add|rm|ls`, `aliprehook command set|rm|ls`, `aliprehook edit`, `aliprehook key [--path]` — manage `hooks.map` / `commands.map` for the current project key without hand-written lines (see [07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md))
+- `aliprehook verbose [quiet|summary|detail] [--shell] [--reset]` — run summary level (`ALIPREHOOK_VERBOSE` → `settings` → `summary`; see [08_run-summary.md](./08_run-summary.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks

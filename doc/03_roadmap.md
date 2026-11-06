@@ -165,6 +165,13 @@ Ideas that came up while using aliprehook. Implement only when picked.
   - `lib.zsh` warns once per shell if an old file exists without its new one (run `./install.sh`); no long-term fallback
   - Every doc, README, example and test updated to the new names
   - Tests: install renames each old file, keeps an existing new file untouched, uninstall removes old names and keeps new ones, warning shown once, everything else unchanged
+- [x] Run summary: show what aliprehook did ([08_run-summary.md](./08_run-summary.md))
+  - One stderr line after hooks, before the command, only if something happened: `hooks:` (run order, `(*)` / `(project)`), `env:` (names only, `(kept)` for `--keep-env`), `command: commands.map:<line>`
+  - `ALIPREHOOK_VERBOSE=quiet|summary|detail` (default `summary`); `detail`: per-step lines as they happen (hook before it runs, `… ok` after), reasons for skipped steps, final command line
+  - `aliprehook verbose [<quiet|summary|detail>] [--shell] [--reset]`: show the level and its source, save it in `~/.config/aliprehook/settings` (`verbose=…`, parsed, never sourced; kept by `uninstall.sh`), or set it for this shell only; precedence `ALIPREHOOK_VERBOSE` → `settings` → `summary`; warn when a saved level is hidden by the env var; read `settings` on every command
+  - New theme role `trace` (default `90`, like `hint`) in `purple.theme` / `none.theme`; same color rules as other messages
+  - Same summary from Case B helpers (`aliprehook_with_env`, `aliprehook_command`)
+  - README section; tests: no line when nothing happened, each part shown alone and combined, values never printed, `quiet` silent, `detail` order and skip reasons, no line on failure, stderr only, `trace` role themable; `aliprehook verbose` show / save / `--shell` / `--reset`, precedence, hidden-setting warning, other shell sees a save, bad value → exit 2
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 

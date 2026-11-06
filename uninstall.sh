@@ -27,7 +27,7 @@ for f in registry allowed commands theme; do
   fi
 done
 
-for f in hooks.map allowed-repos commands.map hooks theme-overrides; do
+for f in hooks.map allowed-repos commands.map hooks theme-overrides settings; do
   [ -e "$dest/$f" ] && echo "kept    $dest/$f"
 done
 

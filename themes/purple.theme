@@ -2,7 +2,7 @@
 #
 # role=code, where code is ANSI SGR parameters (what goes between ESC[ and m).
 # Empty code = default text color. Labels (warning:, error:) add bold.
-# Override single roles in ~/.config/aliprehook/theme.
+# Override single roles in ~/.config/aliprehook/theme-overrides.
 
 brand=1;38;5;177
 info=
@@ -14,3 +14,4 @@ hook=36
 key=34
 var=1
 hint=90
+trace=90
