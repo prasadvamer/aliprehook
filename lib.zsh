@@ -1271,7 +1271,7 @@ _aliprehook_cli_hook() {
       else
         command mkdir -p -- ${abs:h} &&
           _aliprehook_hook_template $key $cmd > $abs &&
-          command chmod +x -- $abs || { _aliprehook_msg error "cannot create " "@key=$abs"; return 1; }
+          command chmod -- +x $abs || { _aliprehook_msg error "cannot create " "@key=$abs"; return 1; }
         _aliprehook_msg success "@success=created" " " "@hook=$(_aliprehook_tilde $abs)"
       fi
       _aliprehook_cli_registry_add $key $cmd $stored $abs || return 1
@@ -1466,7 +1466,7 @@ _aliprehook_cli_command() {
       done
       (( placed )) || keep+=("$key  $cmd  $new")
       _aliprehook_write_lines $file "${keep[@]}" || { _aliprehook_msg error "cannot write " "@key=$file"; return 1; }
-      (( existed )) || command chmod go-w -- ${file:A}
+      (( existed )) || command chmod -- go-w ${file:A}
       _aliprehook_msg success "@command=$cmd" " in " "@key=$key" " now runs: $new"
       [[ -n $old ]] && _aliprehook_msg info "was: $old"
       if (( ! ${+functions[$cmd]} )); then
