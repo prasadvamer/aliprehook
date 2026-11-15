@@ -140,7 +140,14 @@ Same command name, different command line per project (`Dbuild` → `docker comp
 ## Phase 8 — Dogfood
 
 - Keep using it daily alongside Phase 9; new friction (slow shell startup, confusing errors, missing commands) becomes an item under "Improvements from dogfooding" and does not hold this phase open
-- [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands.map` line chose it) and why (dry run)
+- [x] `aliprehook explain [<cmd>] [--path <dir> | --key <key>]` ([10_explain.md](./10_explain.md)): dry run, nothing runs or is written
+  - Key and its source; how `<cmd>` is defined in this shell (`aliprehook_define` records names, options and defaults; Case B function; otherwise a warning)
+  - Hooks in run order with source (`hooks.map:<line>`, `(*)`, project) and the project hook's skip reason; `commands.map` line or `(default)`
+  - Problems as warnings: hook missing / not executable, project hook outside the repo, `commands.map` writable by others, old file names, invalid verbose level
+  - "Not matching here": `hooks.map` / `commands.map` lines for `<cmd>` under other keys
+  - No `<cmd>`: list commands with anything for this key
+  - Same lookups as a run; stdout; exit 0 ok / 1 problem / 2 usage; `--help`, listed in `aliprehook help`; README section
+  - Tests: each section; not a git repo, not allowed, no entry; wrapper vs Case B vs alias vs not found; missing and non-executable hook → exit 1; other-key lines listed; `--path` / `--key` / conflicts / `--all` rejected; no-arg list; nothing executed (hook writes a marker file that must not appear); values never printed
 
 ### Improvements from dogfooding
 

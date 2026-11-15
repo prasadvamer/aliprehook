@@ -166,26 +166,37 @@ aliprehook_normalize_remote() {
   print -r -- "${host:l}$rest"
 }
 
-# Print the project key for the current directory:
+# Set _aliprehook_key / _aliprehook_key_src for the current directory:
 # normalized origin URL, else first fetch remote, else `pwd -P`.
-aliprehook_project_key() {
+typeset -g _aliprehook_key= _aliprehook_key_src=
+_aliprehook_key_info() {
   emulate -L zsh -o extended_glob
-  local url
+  local url name=origin r u kind
 
   if [[ $(command git rev-parse --is-inside-work-tree 2>/dev/null) == true ]]; then
     url=$(command git remote get-url origin 2>/dev/null)
     if [[ -z $url ]]; then
-      url=$(command git remote -v 2>/dev/null | while read -r _ u kind; do
-        [[ $kind == '(fetch)' ]] && { print -r -- $u; break; }
-      done)
+      command git remote -v 2>/dev/null | while read -r r u kind; do
+        [[ $kind == '(fetch)' ]] && { print -r -- "$r"$'\t'"$u"; break; }
+      done | IFS=$'\t' read -r name url
     fi
     if [[ -n $url ]]; then
-      aliprehook_normalize_remote $url
-      return
+      _aliprehook_key=$(aliprehook_normalize_remote $url)
+      _aliprehook_key_src="git remote $name"
+      return 0
     fi
+    _aliprehook_key_src="git repo without remote; directory path"
+  else
+    _aliprehook_key_src="no git repo; directory path"
   fi
+  _aliprehook_key=$(pwd -P)
+}
 
-  pwd -P
+# Print the project key for the current directory.
+aliprehook_project_key() {
+  emulate -L zsh
+  _aliprehook_key_info
+  print -r -- $_aliprehook_key
 }
 
 # Print every hook registered for (project key, command), one path per line:
@@ -193,16 +204,19 @@ aliprehook_project_key() {
 # The same (key, command, hook) line listed twice is printed once.
 # Relative paths are under ALIPREHOOK_HOME. Returns 1 if nothing matches.
 # --mark (3rd argument): print "*<TAB>path" for * lines, "<TAB>path" otherwise.
+# --numbered: "*<TAB><line number><TAB>path" (mark empty for key lines).
 aliprehook_registry_lookup() {
   emulate -L zsh -o extended_glob
-  local key=$1 cmd=$2 k c h id
+  local key=$1 cmd=$2 k c h id e
   local registry=$ALIPREHOOK_HOME/hooks.map
   local -a common exact
   local -A seen
+  integer n=0
 
   [[ -r $registry ]] || return 1
 
   while read -r k c h _; do
+    (( n++ ))
     [[ -z $k || $k == \#* ]] && continue
     [[ $c == "$cmd" && -n $h ]] || continue
     [[ $k == '*' || $k == "$key" ]] || continue
@@ -211,18 +225,20 @@ aliprehook_registry_lookup() {
     seen[$id]=1
     [[ $h == /* ]] || h=$ALIPREHOOK_HOME/$h
     if [[ $k == '*' ]]; then
-      common+=($h)
+      common+=("*"$'\t'"$n"$'\t'"$h")
     else
-      exact+=($h)
+      exact+=($'\t'"$n"$'\t'"$h")
     fi
   done < $registry
 
   (( $#common + $#exact )) || return 1
-  if [[ $3 == --mark ]]; then
-    print -rl -- ${common/#/*$'\t'} ${exact/#/$'\t'}
-  else
-    print -rl -- $common $exact
-  fi
+  for e in $common $exact; do
+    case $3 in
+      --numbered) print -r -- $e ;;
+      --mark) print -r -- "${e%%$'\t'*}"$'\t'"${${e#*$'\t'}#*$'\t'}" ;;
+      *) print -r -- "${${e#*$'\t'}#*$'\t'}" ;;
+    esac
+  done
 }
 
 # Exit 0 if <key> is listed in ALIPREHOOK_HOME/allowed-repos.
@@ -328,8 +344,8 @@ _aliprehook_project_commands_warn() {
 
 # --- Per-project commands ---------------------------------------------------
 # ALIPREHOOK_HOME/commands.map: "project_key  command  rest-of-line (shell syntax)".
-# Print "<line number><TAB><command line>" for <cmd> in the current project.
-# Exit 0 if found, 1 if none
+# Print "<line number><TAB><command line>" for <cmd> in the current project
+# (or in project key <key>, 2nd argument). Exit 0 if found, 1 if none
 # (use the default), 2 on an error (already reported; do not run anything).
 _aliprehook_command_lookup() {
   emulate -L zsh -o extended_glob
@@ -353,7 +369,7 @@ _aliprehook_command_lookup() {
     return 2
   fi
 
-  key=$(aliprehook_project_key)
+  key=${2:-$(aliprehook_project_key)}
   while IFS= read -r line || [[ -n $line ]]; do
     (( n++ ))
     [[ $line == [[:space:]]#(\#*|) ]] && continue
@@ -718,17 +734,23 @@ _aliprehook_trace_command() {
 
 # Files renamed in 0.x: warn once per shell if an old one is still there
 # without its new name (install.sh renames them). Old files are not read.
+# --always: check even if already warned in this shell (explain). Exit 1 if found.
 typeset -g _aliprehook_old_names_warned=
 _aliprehook_old_names_check() {
   emulate -L zsh
-  [[ $_aliprehook_old_names_warned == $ALIPREHOOK_HOME ]] && return 0
-  _aliprehook_old_names_warned=$ALIPREHOOK_HOME
+  if [[ $1 != --always ]]; then
+    [[ $_aliprehook_old_names_warned == $ALIPREHOOK_HOME ]] && return 0
+    _aliprehook_old_names_warned=$ALIPREHOOK_HOME
+  fi
   local old new
+  integer found=0
   for old new in registry hooks.map commands commands.map allowed allowed-repos theme theme-overrides; do
     if [[ -f $ALIPREHOOK_HOME/$old && ! -e $ALIPREHOOK_HOME/$new ]]; then
       _aliprehook_msg warning "@key=$ALIPREHOOK_HOME/$old" " is not read anymore; it is now " "@key=$new" " " "@hint=(run ./install.sh from the aliprehook repo, or: mv $ALIPREHOOK_HOME/$old $ALIPREHOOK_HOME/$new)"
+      found=1
     fi
   done
+  return $found
 }
 
 # Run prehooks for <cmd_name>: user layer, then project layer if allowed.
@@ -908,6 +930,7 @@ _aliprehook_usage=(
   'edit'           'aliprehook edit [hooks|commands|allowed|theme|settings]'
   'key'            'aliprehook key [--path <dir>]'
   'verbose'        'aliprehook verbose [quiet|summary|detail] [--shell] [--reset]'
+  'explain'        'aliprehook explain [<cmd>] [--path <dir> | --key <key>]'
 )
 
 _aliprehook_help_project() {
@@ -934,6 +957,7 @@ _aliprehook_help() {
   command set|rm|ls     manage per-project command lines in commands.map (aliprehook command help)
   edit [<file>]         open hooks.map, commands.map, allowed-repos, theme-overrides or settings in \$EDITOR
   verbose [<level>]     show or set what aliprehook prints about a run (quiet, summary, detail)
+  explain [<cmd>]       dry run: why a hook does / doesn't run, which command line runs
   help                  this help
 
 Every subcommand takes --help, e.g. aliprehook hook new --help"
@@ -1051,8 +1075,8 @@ example: aliprehook edit commands"
 
 What aliprehook prints about a run (on stderr, never variable values):
   quiet     nothing (errors and warnings still print)
-  summary   one line before the command, only if hooks ran, variables were
-            passed or the command came from commands.map (default)
+  summary   what will run (hooks, commands.map line) before any hook runs,
+            then the passed variable names; only if there is any (default)
   detail    every step as it happens, skipped steps and why, the command line
 
   (no level)  show the current level and where it comes from
@@ -1062,6 +1086,21 @@ What aliprehook prints about a run (on stderr, never variable values):
 For one run: ALIPREHOOK_VERBOSE=detail <cmd>
 
 example: aliprehook verbose detail"
+      ;;
+    explain)
+      print -r -- "usage: $_aliprehook_usage[explain]
+
+Dry run: show what <cmd> would do here and why, without running anything.
+  the project key and where it comes from; how <cmd> is defined in this shell;
+  the hooks in run order (and why the project hook is skipped); the command line;
+  problems that would make the run fail; lines for <cmd> under other keys.
+Without <cmd>: list the commands with hooks or a command line for this project.
+
+  --path <dir>    explain for the project at <dir>
+  --key <key>     explain for this project key (the repo's .aliprehook.yml is not checked)
+Exit: 0 the run would work, 1 a problem was found, 2 usage error.
+
+example: aliprehook explain Dbuild"
       ;;
     key)
       print -r -- "usage: $_aliprehook_usage[key]
@@ -1683,6 +1722,318 @@ _aliprehook_cli_verbose() {
   fi
 }
 
+# --- aliprehook explain (dry run) ------------------------------------------
+# Design: doc/10_explain.md. Uses the same lookups as a run; runs nothing.
+
+# Print one line on stdout, no prefix: parts are text or @role=text.
+_aliprehook_out() {
+  emulate -L zsh -o extended_glob
+  local out= part
+  integer color=0
+  _aliprehook_theme_ensure
+  _aliprehook_color_on 1 && color=1
+  for part in "$@"; do
+    if [[ $part == '@'(#b)([a-z]##)=(*) ]]; then
+      _aliprehook_paint "${_aliprehook_theme[$match[1]]-}" "$match[2]"
+    else
+      out+=$part
+    fi
+  done
+  print -r -- $out
+}
+
+# How <cmd> resolves in this shell. Sets the caller's `mode` (wrapper,
+# function, other) and `what` (description).
+_aliprehook_explain_kind() {
+  emulate -L zsh
+  local cmd=$1 w
+  w=$(whence -w -- $cmd 2>/dev/null)
+  mode=other
+  case ${w##*: } in
+    alias) what="an alias: $(alias -- $cmd)" ;;
+    function)
+      if [[ $functions[$cmd] == *_aliprehook_trace_defer=* ]]; then
+        local rec=${_aliprehook_defined[$cmd]:-…}
+        mode=wrapper what="aliprehook_define $cmd $rec"
+        [[ $rec == --keep-env\ * ]] && what="aliprehook_define --keep-env $cmd ${rec#--keep-env }"
+      elif [[ $functions[$cmd] == *aliprehook_run* ]]; then
+        mode=function what="function $cmd (calls aliprehook_run)"
+      else
+        what="a function that does not call aliprehook_run"
+      fi
+      ;;
+    command) what="a program: $(whence -p -- $cmd)" ;;
+    builtin) what="a shell builtin" ;;
+    reserved) what="a shell keyword" ;;
+    *) what="not found" ;;
+  esac
+}
+
+# Warn about a hook file that a run could not execute. Exit 1 if so.
+_aliprehook_explain_hookfile() {
+  emulate -L zsh
+  local layer=$1 hook=$2
+  if [[ ! -f $hook ]]; then
+    _aliprehook_msg warning "$layer hook not found: " "@key=$hook"
+  elif [[ ! -x $hook ]]; then
+    _aliprehook_msg warning "$layer hook not executable: " "@key=$hook" " " "@hint=(run: chmod +x $hook)"
+  else
+    return 0
+  fi
+  return 1
+}
+
+# Checks that apply to every run. Exit 1 if a problem was found.
+_aliprehook_explain_common() {
+  emulate -L zsh
+  integer bad=0
+  _aliprehook_old_names_check --always || bad=1
+  local v=${ALIPREHOOK_VERBOSE-} where=ALIPREHOOK_VERBOSE
+  if [[ -z $v ]]; then
+    _aliprehook_settings_load
+    v=${_aliprehook_settings[verbose]-} where=$ALIPREHOOK_HOME/settings
+  fi
+  if [[ -n $v && $v != (quiet|summary|detail) ]]; then
+    _aliprehook_msg warning "invalid verbose level '$v' in " "@key=$where" "; a run uses summary " "@hint=(levels: quiet, summary, detail)"
+    bad=1
+  fi
+  return $bad
+}
+
+# Explain <cmd> (or list commands if empty) for <key> (empty: this
+# directory). <keymode> --key: the project layer is not checked. <dir>: named
+# in the header (--path).
+_aliprehook_explain() {
+  emulate -L zsh -o extended_glob
+  local cmd=$1 key=$2 keymode=$3 dir=$4 src root rel mode what e mark r n h line
+  integer problems=0 i=0 width=0 rc
+  local -a w rows lines
+
+  if [[ -n $key ]]; then
+    src="--key; project layer not checked"
+  else
+    _aliprehook_key_info
+    key=$_aliprehook_key src=$_aliprehook_key_src
+  fi
+  [[ -n $dir ]] && src+="; --path $(_aliprehook_tilde $dir)"
+  _aliprehook_explain_common || problems=1
+  if [[ $keymode != --key ]]; then
+    root=$(command git rev-parse --show-toplevel 2>/dev/null)
+    [[ -n $root && -f $root/.aliprehook.yml ]] || root=
+  fi
+
+  # --- all commands ---
+  if [[ -z $cmd ]]; then
+    local -a names
+    local -A has
+    local c k rest
+    integer allowed=0
+    [[ -n $root ]] && aliprehook_is_allowed $key && allowed=1
+    _aliprehook_read_lines $ALIPREHOOK_HOME/hooks.map
+    for line in "${lines[@]}"; do
+      [[ $line == [[:space:]]#(\#*|) ]] && continue
+      w=(${=line})
+      [[ -n $w[3] && ( $w[1] == '*' || $w[1] == "$key" ) ]] || continue
+      (( ${names[(Ie)$w[2]]} )) || names+=($w[2])
+    done
+    _aliprehook_read_lines $ALIPREHOOK_HOME/commands.map
+    for line in "${lines[@]}"; do
+      [[ $line == [[:space:]]#(\#*|) ]] && continue
+      w=(${=line})
+      [[ $w[1] == "$key" && -n $w[3] ]] || continue
+      (( ${names[(Ie)$w[2]]} )) || names+=($w[2])
+    done
+    if [[ -n $root ]]; then
+      for e in "${(@f)$(_aliprehook_project_entries $root)}"; do
+        e=${e#*$'\t'}
+        c=${e%%$'\t'*}
+        [[ $c == [A-Za-z_][A-Za-z0-9_-]# && -n ${e#*$'\t'} ]] || continue
+        has[$c]=1
+        (( ${names[(Ie)$c]} )) || names+=($c)
+      done
+    fi
+    _aliprehook_out "@key=$key" " ($src)"
+    if (( ! $#names )); then
+      _aliprehook_out "  nothing registered for this project"
+    fi
+    for c in $names; do (( $#c > width )) && width=$#c; done
+    for c in $names; do
+      local -a parts hk
+      integer star=0
+      parts=()
+      hk=("${(@f)$(aliprehook_registry_lookup $key $c --mark)}")
+      [[ -n $hk[1] ]] || hk=()
+      for e in $hk; do [[ $e == '*'$'\t'* ]] && (( star++ )); done
+      if (( $#hk )); then
+        rest="$#hk hook"; (( $#hk > 1 )) && rest+=s
+        (( star )) && rest+=" ($star *)"
+        parts+=($rest)
+      fi
+      if (( ${+has[$c]} )); then
+        (( allowed )) && parts+=("project hook") || parts+=("project hook (skipped: repo not allowed)")
+      fi
+      line=$(_aliprehook_command_lookup $c $key 2>/dev/null); rc=$?
+      (( rc == 0 )) && parts+=("command: commands.map:${line%%$'\t'*}")
+      (( rc == 2 )) && parts+=("command: commands.map error")
+      _aliprehook_explain_kind $c
+      [[ $mode == other ]] && parts+=("(not defined here)")
+      _aliprehook_out "  " "@command=${(r:width:)c}" "   ${(j:, :)parts}"
+    done
+    _aliprehook_out "@hint=(see: aliprehook explain <cmd>)"
+    return $problems
+  fi
+
+  # --- 1. key, 2. definition ---
+  _aliprehook_out "@command=$cmd" " in " "@key=$key" " ($src)"
+  _aliprehook_explain_kind $cmd
+  if [[ $mode == other ]]; then
+    _aliprehook_msg warning "@command=$cmd" " is not an aliprehook command here ($what); nothing below runs " "@hint=(run: aliprehook_define $cmd <command...>)"
+    problems=1
+  else
+    _aliprehook_out "defined: $what"
+  fi
+
+  # --- 3. hooks in run order ---
+  local -a hk
+  hk=("${(@f)$(aliprehook_registry_lookup $key $cmd --numbered)}")
+  [[ -n $hk[1] ]] || hk=()
+  local pname pwhy phook
+  if [[ $keymode == --key ]]; then
+    pname="(project)" pwhy="project: not checked (--key; no repo to look at)"
+  else
+    if ! _aliprehook_project_plan $key $cmd; then
+      problems=1 pwhy="project: error (see above); the run stops before any hook"
+    elif [[ -n $_aliprehook_plan_hook ]]; then
+      phook=$_aliprehook_plan_hook pname=$_aliprehook_plan_rel
+    else
+      pwhy="project: $_aliprehook_plan_why"
+    fi
+    if [[ -n $root ]]; then
+      [[ -z $pname ]] && pname=$(aliprehook_project_lookup $root $cmd)
+      if aliprehook_is_allowed $key && ! aliprehook_project_check $root >/dev/null; then
+        problems=1
+      fi
+    fi
+    [[ -n $pname ]] || pname="(project)"
+  fi
+  for e in $hk; do
+    h=${${e#*$'\t'}#*$'\t'}
+    (( $#h:t > width )) && width=$#h:t
+  done
+  (( $#pname > width )) && width=$#pname
+
+  _aliprehook_out ""
+  _aliprehook_out "hooks, in run order:"
+  (( $#hk )) || _aliprehook_out "  none in hooks.map for " "@command=$cmd" " here"
+  for e in $hk; do
+    mark=${e%%$'\t'*} r=${e#*$'\t'}
+    n=${r%%$'\t'*} h=${r#*$'\t'}
+    (( i++ ))
+    _aliprehook_out "  $i. " "@hook=${(r:width:)h:t}" "   hooks.map:$n${mark:+ (*)}"
+    _aliprehook_explain_hookfile user $h || problems=1
+  done
+  if [[ -n $phook ]]; then
+    (( i++ ))
+    _aliprehook_out "  $i. " "@hook=${(r:width:)pname}" "   project (.aliprehook.yml)"
+    _aliprehook_explain_hookfile project $phook || problems=1
+  else
+    _aliprehook_out "  -  " "@hook=${(r:width:)pname}" "   $pwhy"
+  fi
+
+  # --- 5. command ---
+  _aliprehook_out ""
+  line=$(_aliprehook_command_lookup $cmd $key); rc=$?
+  if (( rc == 2 )); then
+    _aliprehook_out "command: commands.map error (see above); the run stops before any hook"
+    problems=1
+  elif (( rc == 0 )); then
+    _aliprehook_out "command: commands.map:${line%%$'\t'*}"
+    _aliprehook_out "  ${line#*$'\t'}"
+    if [[ $mode == function && $functions[$cmd] != *aliprehook_command* ]]; then
+      _aliprehook_msg warning "commands.map:${line%%$'\t'*} is not used: " "@command=$cmd" " does not call aliprehook_command"
+      problems=1
+    fi
+  else
+    case $mode in
+      wrapper) _aliprehook_out "command: (default) ${_aliprehook_defined[$cmd]#--keep-env }" ;;
+      function) _aliprehook_out "command: (set by the function)" ;;
+      *) _aliprehook_out "command: none (not an aliprehook command)" ;;
+    esac
+  fi
+
+  # --- 6. not matching here ---
+  local k c rest
+  rows=()
+  integer nw=0
+  n=0
+  _aliprehook_read_lines $ALIPREHOOK_HOME/hooks.map
+  for line in "${lines[@]}"; do
+    (( n++ ))
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    w=(${=line})
+    [[ $w[2] == "$cmd" && -n $w[3] && $w[1] != '*' && $w[1] != "$key" ]] || continue
+    rows+=("hooks.map:$n"$'\t'"$w[1]  $w[2]  $w[3]")
+  done
+  n=0
+  _aliprehook_read_lines $ALIPREHOOK_HOME/commands.map
+  for line in "${lines[@]}"; do
+    (( n++ ))
+    [[ $line == [[:space:]]#(\#*|) ]] && continue
+    [[ $line == [[:space:]]#(#b)([^[:space:]]##)[[:space:]]##([^[:space:]]##)(*) ]] || continue
+    k=$match[1] c=$match[2] rest=${${match[3]##[[:space:]]#}%%[[:space:]]#}
+    [[ $c == "$cmd" && $k != '*' && $k != "$key" ]] || continue
+    rows+=("commands.map:$n"$'\t'"$k  $c  $rest")
+  done
+  if (( $#rows )); then
+    for e in $rows; do (( ${#e%%$'\t'*} > nw )) && nw=${#e%%$'\t'*}; done
+    _aliprehook_out ""
+    _aliprehook_out "not matching here:"
+    for e in $rows; do
+      _aliprehook_out "  ${(r:nw:)e%%$'\t'*}  ${e#*$'\t'}"
+    done
+  fi
+
+  # --- 7. variables ---
+  if (( i )); then
+    _aliprehook_out ""
+    _aliprehook_out "@hint=variables passed by hooks are known only when they run (run: ALIPREHOOK_VERBOSE=detail $cmd)"
+  fi
+  return $problems
+}
+
+_aliprehook_cli_explain() {
+  emulate -L zsh -o extended_glob
+  local -A opts
+  local -a pos
+  local key
+  _aliprehook_cli_args explain 'all key: path:' "$@" || return 2
+  if (( ${+opts[help]} )) || [[ $#pos == 1 && $pos[1] == help ]]; then
+    _aliprehook_help explain
+    return 0
+  fi
+  if (( ${+opts[all]} )); then
+    _aliprehook_cli_bad explain "no --all: a run always has one project key; use --key <key> or --path <dir>"
+    return 2
+  fi
+  (( $#pos <= 1 )) || { _aliprehook_cli_bad explain "expected at most one <cmd>"; return 2; }
+  if [[ -n $pos[1] ]]; then
+    _aliprehook_cli_cmdname explain $pos[1] || return 2
+  fi
+  if (( ${+opts[key]} && ${+opts[path]} )); then
+    _aliprehook_cli_bad explain "use only one of --key, --path"
+    return 2
+  fi
+  if (( ${+opts[key]} )); then
+    key=$(_aliprehook_cli_key explain) || return 2
+    _aliprehook_explain "$pos[1]" $key --key
+  elif (( ${+opts[path]} )); then
+    [[ -d $opts[path] ]] || { _aliprehook_cli_bad explain "--path: no such directory: " "@key=$opts[path]"; return 2; }
+    ( builtin cd -q -- $opts[path] && _aliprehook_explain "$pos[1]" '' '' ${opts[path]:A} )
+  else
+    _aliprehook_explain "$pos[1]"
+  fi
+}
+
 _aliprehook_cli_keycmd() {
   emulate -L zsh
   local -A opts
@@ -1701,12 +2052,12 @@ _aliprehook_cli_keycmd() {
   fi
 }
 
-# aliprehook allow | revoke | key | hook | command | edit | verbose | help
+# aliprehook allow | revoke | key | hook | command | edit | verbose | explain | help
 aliprehook() {
   emulate -L zsh -o extended_glob
   local sub=$1 key root allowed=$ALIPREHOOK_HOME/allowed-repos tmp line
   (( $# )) && shift
-  _aliprehook_old_names_check
+  [[ $sub == explain ]] || _aliprehook_old_names_check
 
   case $sub in
     allow)
@@ -1751,6 +2102,7 @@ aliprehook() {
     command) _aliprehook_cli_command "$@" ;;
     edit) _aliprehook_cli_edit "$@" ;;
     verbose) _aliprehook_cli_verbose "$@" ;;
+    explain) _aliprehook_cli_explain "$@" ;;
     help|-h|--help|'')
       _aliprehook_help
       ;;
@@ -1760,6 +2112,8 @@ aliprehook() {
       ;;
   esac
 }
+
+typeset -gA _aliprehook_defined
 
 # Define <name> as a shell function that runs prehooks, then <command...> "$@"
 # (or this project's line from ALIPREHOOK_HOME/commands.map) with the variables
@@ -1783,6 +2137,9 @@ aliprehook_define() {
     _aliprehook_msg error "aliprehook_define: invalid name: " "@command=$name"
     return 2
   fi
+
+  # For aliprehook explain: options and default words as written.
+  _aliprehook_defined[$name]="${keep:+$keep }${(j: :)${(q-)@}}"
 
   # Calling the same name inside the wrapper would recurse.
   [[ $1 == $name ]] && set -- command "$@"

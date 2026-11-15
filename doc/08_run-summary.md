@@ -102,4 +102,4 @@ detail (from ~/.config/aliprehook/settings)
 - Names only, never values: the same rule as every other aliprehook message.
 - The summary describes what happened in **this** run; it does not read files again or run anything extra (no slowdown beyond printing up to two lines).
 - Hand-written (Case B) functions: `aliprehook_run` prints line 1 without `command:` (it does not know the command) and line 2 when it finishes; `aliprehook_command` prints `<cmd> → command: commands.map:<line>` before running a `commands.map` line. In `detail`, `aliprehook_with_env` / `aliprehook_command` print the command line.
-- `aliprehook explain <cmd>` (Phase 8) stays the dry run: what *would* happen, without running anything. The summary is what *did* happen.
+- `aliprehook explain <cmd>` ([10_explain.md](./10_explain.md)) stays the dry run: what *would* happen, without running anything. The summary is what *did* happen.

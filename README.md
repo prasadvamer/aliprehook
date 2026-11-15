@@ -519,6 +519,39 @@ aliprehook:   command (commands.map:3): DOCKER_BUILDKIT=1 docker compose -f dock
 
 The level is saved in `~/.config/aliprehook/settings` (`verbose=detail`). `ALIPREHOOK_VERBOSE` wins over it; `aliprehook verbose` tells you when it does. The color is the theme role `trace` (grey by default; e.g. `trace=2` in `theme-overrides` for dim). Design: [doc/08_run-summary.md](./doc/08_run-summary.md).
 
+## 13. Why did / didn't my hook run? (`aliprehook explain`)
+
+A dry run: what a command would do here, and why. Nothing runs, nothing is written.
+
+```text
+$ aliprehook explain Dbuild
+Dbuild in github.com/org/sample_app_web (git remote origin)
+defined: aliprehook_define Dbuild docker compose build
+
+hooks, in run order:
+  1. all_Dbuild.sh          hooks.map:2 (*)
+  2. aws_login.sh           hooks.map:5
+  -  .aliprehook/build.sh   project: skipped (repo not allowed; run: aliprehook allow)
+
+command: commands.map:3
+  DOCKER_BUILDKIT=1 docker compose build --no-cache
+
+not matching here:
+  hooks.map:9     github.com/org/other_app  Dbuild  hooks/other_build.sh
+
+variables passed by hooks are known only when they run (run: ALIPREHOOK_VERBOSE=detail Dbuild)
+```
+
+- **Key and its source:** the usual reason a hook doesn't run is that it is registered on another key (fork, other remote, folder without git).
+- **defined:** how the command is defined in this shell. An alias, a program or a function that doesn't call `aliprehook_run` gets a warning: nothing aliprehook does runs for it.
+- **hooks:** every hook in run order with the line that registered it; the project hook, or why it is skipped.
+- **command:** the `commands.map` line that runs, or `(default)`.
+- **not matching here:** lines for the same command under other keys.
+- **Problems** a run would hit print as `warning:` (hook missing or not executable, a hand-written function that ignores its `commands.map` line, old file names, invalid verbose level) or as the run's own `error:` (unsafe `commands.map`, project hook outside the repo); exit code 1.
+- `aliprehook explain` without a command lists every command with hooks or a command line for this project. `--path <dir>` explains for another project, `--key <key>` for a key (the repo's `.aliprehook.yml` is not checked then).
+
+Design: [doc/10_explain.md](./doc/10_explain.md).
+
 ## Converting existing `.zshrc` functions
 
 **Case A — "do some prep, then one command":** move the prep into a hook, replace the function with `aliprehook_define`.
@@ -573,6 +606,7 @@ Dclear() {
 | `aliprehook command set\|rm\|ls …` | Manage per-project command lines in `commands.map` ([11](#11-manage-hooks-and-commands)) |
 | `aliprehook edit [<file>]` | Open `hooks.map`, `commands.map`, `allowed-repos`, `theme-overrides` or `settings` in `$EDITOR` |
 | `aliprehook verbose [<level>] [--shell] [--reset]` | Show or set the run summary level ([12](#12-see-what-aliprehook-did)) |
+| `aliprehook explain [<cmd>] [--path <dir> \| --key <key>]` | Dry run: why a hook does / doesn't run ([13](#13-why-did--didnt-my-hook-run-aliprehook-explain)) |
 | `aliprehook help` | Usage (also `aliprehook hook help`, `… --help` on every subcommand) |
 
 ## Uninstall

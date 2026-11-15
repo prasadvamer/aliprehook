@@ -26,7 +26,7 @@ Three separate steps, each only on the user's word:
 | `install.sh` / `uninstall.sh` | Dev install (symlink or `--copy`) / removal; never delete user data |
 | `examples/project/` | Example project layer |
 | `tests/` | `test_*.zsh`, run by `zsh tests/run.zsh` |
-| `doc/01` system design, `02` positioning, `03` roadmap, `04` hook env, `05` theme, `06` commands.map, `07` CLI, `08` run summary, `09` wrapping real commands | |
+| `doc/01` system design, `02` positioning, `03` roadmap, `04` hook env, `05` theme, `06` commands.map, `07` CLI, `08` run summary, `09` wrapping real commands, `10` explain | |
 
 User files: `hooks.map`, `commands.map`, `allowed-repos`, `theme-overrides`, `settings`, `hooks/`. Never overwrite or remove them from install/uninstall.
 

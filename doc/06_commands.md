@@ -83,7 +83,7 @@ A `*` line in `commands.map` is an error: aliprehook prints the file and line, s
 - **File permissions:** if `commands.map` is writable by group or others, aliprehook refuses it with an error and the command does not run, so another user cannot change what your commands run. `install.sh` creates it with `chmod go-w`.
 - **Only for `aliprehook_define` commands.** A line for a name that is not defined does nothing (`aliprehook doctor` reports it). Hand-written Case B functions can opt in with a helper, after `aliprehook_run`: `aliprehook_command Dbuild docker compose build -- "$@"` (runs the `commands.map` line if there is one, else the given default; your arguments come after the first `--`, so the default itself cannot contain `--`). Like `aliprehook_with_env`, it sets the variables the hooks passed and accepts `--keep-env`.
 - **Hook-only commands** (`aliprehook_define X :`) can get a real command in some projects.
-- **Visibility:** `aliprehook explain Dbuild` (Phase 8) prints which command will run here and which line chose it.
+- **Visibility:** `aliprehook explain Dbuild` ([10_explain.md](./10_explain.md)) prints which command will run here and which line chose it.
 - Errors (`*` line, empty command part, unreadable or refused file) name the file and line; the command does not run. Problems in lines for other commands are not reported.
 
 ## Examples
