@@ -404,7 +404,7 @@ github.com/org/legacy_app         Dbuild   make docker-build
 - `commands.map` lookup in `aliprehook_define` wrappers, and `aliprehook_command [--keep-env] <name> <default...> -- "$@"` for Case B functions (see [06_commands.md](./06_commands.md))
 - `aliprehook hook new|add|rm|ls`, `aliprehook command set|rm|ls`, `aliprehook edit`, `aliprehook key [--path]` — manage `hooks.map` / `commands.map` for the current project key without hand-written lines (see [07_cli-manage-hooks-and-commands.md](./07_cli-manage-hooks-and-commands.md))
 - `aliprehook verbose [quiet|summary|detail] [--shell] [--reset]` — run summary level (`ALIPREHOOK_VERBOSE` → `settings` → `summary`; see [08_run-summary.md](./08_run-summary.md))
-- Planned: `aliprehook_wrap [--keep-env] <cmd>` for real commands, subcommand keys (`docker:compose:up`) in `hooks.map` / `commands.map`, and a fast path when nothing is registered (see [09_wrap-real-commands.md](./09_wrap-real-commands.md))
+- Later (not v1): `aliprehook_wrap [--keep-env] <cmd>` for real commands, subcommand keys (`docker:compose:up`) in `hooks.map` / `commands.map`, and a fast path when nothing is registered (see [09_wrap-real-commands.md](./09_wrap-real-commands.md))
 - Optional later: `aliprehook explain <cmd>` — print what would run
 
 ## Adding hooks

@@ -139,8 +139,7 @@ Same command name, different command line per project (`Dbuild` → `docker comp
 
 ## Phase 8 — Dogfood
 
-- [ ] Use it daily for 2+ weeks across several repos
-- [ ] Note friction: slow shell startup, confusing errors, missing commands
+- Keep using it daily alongside Phase 9; new friction (slow shell startup, confusing errors, missing commands) becomes an item under "Improvements from dogfooding" and does not hold this phase open
 - [ ] Add `aliprehook explain <cmd>`: print the key, which hooks would run, which command line will run (and which `commands.map` line chose it) and why (dry run)
 
 ### Improvements from dogfooding
@@ -172,22 +171,13 @@ Ideas that came up while using aliprehook. Implement only when picked.
   - New theme role `trace` (default `90`, like `hint`) in `purple.theme` / `none.theme`; same color rules as other messages
   - Same summary from Case B helpers (`aliprehook_with_env`, `aliprehook_command`)
   - README section; tests: no line when nothing happened, each part shown alone and combined, values never printed, `quiet` silent, `detail` order and skip reasons, no line on failure, stderr only, `trace` role themable; `aliprehook verbose` show / save / `--shell` / `--reset`, precedence, hidden-setting warning, other shell sees a save, bad value → exit 2
-- [ ] Wrap real commands ([09_wrap-real-commands.md](./09_wrap-real-commands.md))
-  - `aliprehook_wrap [--keep-env] <cmd>`: same as `aliprehook_define <cmd> <cmd>`; error if `<cmd>` is not an installed program
-  - Subcommand keys `cmd:word:word` in `hooks.map`, `commands.map`, the CLI and (quoted) `.aliprehook.yml`; match when the positional words (options skipped) start with those words
-  - `aliprehook_wrap --value-opts '<options>'`: options that take the next word as value; `--opt=value`, `-fvalue`, `--`, lone `-` handled; no built-in option lists
-  - Hooks: every matching key runs; `*` lines first, then the project's; general → specific within each; `ALIPREHOOK_MATCH` set to the matched key
-  - Commands: most specific matching line wins; exact prefix → matched words replaced, rest appended (or `"$@"`); options skipped → line used only if it places `"$@"` (arguments minus matched words), else next less specific line or the real command, reason in `detail`; the wrapped name inside the line is the real command (no loop)
-  - Fast path: no `hooks.map` / `commands.map` line for the command and no `.aliprehook.yml` up the path → run the real command without computing the key
-  - Run summary and `detail` show the matched path and keys; README section
-  - Tests: wrap of a missing program fails; `docker ps` vs `docker compose up` matching; option before subcommand matches with `--value-opts`, misses without it (never a wrong match); `--opt=value`, `--`, `run web up` no false match; options-skipped `commands.map` line with and without `"$@"`; hook order across levels and layers; most specific command line, rest appended; no recursion in a `docker:…` line; `ALIPREHOOK_MATCH`; quoted yml key; fast path makes no git call; existing plain-name behaviour unchanged
 - [x] Run summary: announce before, confirm after ([08_run-summary.md](./08_run-summary.md) § The summary lines)
   - Line 1 before any hook runs (`→`): planned `hooks:` (user + project) and `command:` (wrappers; `aliprehook_command` in Case B); none if nothing will run
   - Line 2 before the command (`·`): `env:` only if variables were passed; not printed when a hook fails
   - Project hook decided (allowed + entry) before user hooks run, so line 1 is complete; hooks that run = hooks announced
   - Tests: line 1 precedes hook output; line 2 only with variables; failure → line 1 + error, no line 2; hook-only (`:`) command; Case B order; `detail` unchanged
 
-**Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
+**Done when:** `explain` answers "why did / didn't my hook run?" and no open dogfooding item blocks daily use.
 
 ## Phase 9 — Public v1 (open source)
 
@@ -251,6 +241,8 @@ Rule for every install path: **uninstall removes the program, never user data.**
 **Done when:** the Phase 2–3, 5, 6 and 7 test suites pass on zsh, bash and fish.
 
 ## Later (not v1)
+
+- Wrap real commands ([09_wrap-real-commands.md](./09_wrap-real-commands.md)): `aliprehook_wrap`, subcommand keys with `--value-opts`, fast path; parked until per-hook `case` filtering proves painful
 
 - Prefer `upstream` over `origin` for forks (opt-in)
 - Monorepo keys: remote + path-within-repo

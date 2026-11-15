@@ -1,8 +1,8 @@
 # Wrapping real commands (`docker compose up` without `Dup`)
 
-Design for using aliprehook on a real command (`docker`, `git`, `npm`, …) instead of a short alias, with hooks and command lines per **subcommand** (`docker compose up`). Work items: [03_roadmap.md](./03_roadmap.md) Phase 8, Improvements from dogfooding.
+Design for using aliprehook on a real command (`docker`, `git`, `npm`, …) instead of a short alias, with hooks and command lines per **subcommand** (`docker compose up`). Roadmap: [03_roadmap.md](./03_roadmap.md) § Later (not v1).
 
-> Status: planned, not implemented.
+> Status: parked (Later, not v1), not implemented.
 
 ## Problem
 
