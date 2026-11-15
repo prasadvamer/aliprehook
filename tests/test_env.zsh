@@ -286,10 +286,11 @@ ALIPREHOOK_HOME=$ALIPREHOOK_HOME zsh -fi $tmp/int.zsh >/dev/null 2>&1 </dev/null
 assert_eq 0 "$(leftovers)" "temp file removed after interrupt"
 
 # Temp files are private.
-uhook mode.sh 'stat -c %a "$ALIPREHOOK_ENV_FILE" > '"$tmp/mode"
+# `ls -l` permission bits, not `stat -c` (GNU only; macOS stat differs).
+uhook mode.sh 'ls -ln "$ALIPREHOOK_ENV_FILE" | cut -c1-10 > '"$tmp/mode"
 reg "$key  M  hooks/mode.sh"
 aliprehook_run M
-assert_eq 600 "$(<$tmp/mode)" "temp file mode 0600"
+assert_eq "-rw-------" "$(<$tmp/mode)" "temp file mode 0600"
 [[ $(<$tmp/mode) ]] && [[ -n ${XDG_RUNTIME_DIR} ]]
 
 assert_eq 0 "$(leftovers)" "no temp files left at the end"
