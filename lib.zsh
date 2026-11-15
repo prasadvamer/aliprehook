@@ -591,7 +591,9 @@ _aliprehook_exec() {
 
 # --- Run summary (ALIPREHOOK_VERBOSE / settings) -----------------------------
 # Design: doc/08_run-summary.md. What the current run did, for the summary line.
-typeset -g _aliprehook_trace_level=summary _aliprehook_trace_source=default
+typeset -g _aliprehook_trace_level=summary _aliprehook_trace_source=default _aliprehook_trace_cmd_announced=
+# Project hook planned before any hook runs (see _aliprehook_project_plan).
+typeset -g _aliprehook_plan_hook= _aliprehook_plan_root= _aliprehook_plan_rel= _aliprehook_plan_why=
 typeset -ga _aliprehook_trace_hooks _aliprehook_trace_env _aliprehook_trace_kept _aliprehook_last_passed
 typeset -gA _aliprehook_settings _aliprehook_verbose_warned
 
@@ -649,20 +651,36 @@ _aliprehook_trace_add_passed() {
   fi
 }
 
-# Summary line for <cmd> [command source], level summary only; then the
-# collected state is cleared so it is reported once.
-_aliprehook_trace_summary() {
+# Summary line 1, before any hook runs (summary level): what is about to
+# run. <labels>: hooks in run order. The command part is included for
+# aliprehook_define wrappers, which look up commands.map first.
+_aliprehook_trace_plan() {
   emulate -L zsh
-  local cmd=$1 src=$2 n
-  local -a parts names
+  local cmd=$1
+  shift
+  local -a parts
+  _aliprehook_trace_cmd_announced=
+  [[ $_aliprehook_trace_level == summary ]] || return 0
+  (( $# )) && parts+=("hooks: ${(j:, :)@}")
+  if [[ ${_aliprehook_trace_defer-} == "$cmd" && -n ${_aliprehook_trace_cmdsrc-} ]]; then
+    parts+=("command: $_aliprehook_trace_cmdsrc")
+    _aliprehook_trace_cmd_announced=$cmd
+  fi
+  (( $#parts )) && _aliprehook_trace "$cmd → ${(j: · :)parts}"
+  return 0
+}
+
+# Summary line 2, after the hooks (summary level): names of the variables
+# passed, `(kept)` for --keep-env. Clears the collected state.
+_aliprehook_trace_env_line() {
+  emulate -L zsh
+  local cmd=$1 n
+  local -a names
   if [[ $_aliprehook_trace_level == summary ]]; then
-    (( $#_aliprehook_trace_hooks )) && parts+=("hooks: ${(j:, :)_aliprehook_trace_hooks}")
     for n in $_aliprehook_trace_env; do
       (( ${_aliprehook_trace_kept[(Ie)$n]} )) && names+=("$n (kept)") || names+=($n)
     done
-    (( $#names )) && parts+=("env: ${(j:, :)names}")
-    [[ -n $src ]] && parts+=("command: $src")
-    (( $#parts )) && _aliprehook_trace "$cmd · ${(j: · :)parts}"
+    (( $#names )) && _aliprehook_trace "$cmd · env: ${(j:, :)names}"
   fi
   _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
   return 0
@@ -689,7 +707,12 @@ _aliprehook_trace_command() {
     fi
     _aliprehook_trace_hooks=() _aliprehook_trace_env=() _aliprehook_trace_kept=()
   else
-    _aliprehook_trace_summary $cmd $src
+    _aliprehook_trace_env_line $cmd
+    # Case B (aliprehook_command): the command was not announced before the hooks.
+    if [[ -n $src && $_aliprehook_trace_cmd_announced != "$cmd" ]]; then
+      [[ $_aliprehook_trace_level == summary ]] && _aliprehook_trace "$cmd → command: $src"
+    fi
+    _aliprehook_trace_cmd_announced=
   fi
 }
 
@@ -727,7 +750,22 @@ aliprehook_run() {
   # User layer: every matching hooks.map hook, in order; first failure stops.
   local -a hooks
   local entry label
+  local -a labels
   hooks=("${(@f)$(aliprehook_registry_lookup $key $cmd --mark)}")
+  for entry in $hooks; do
+    [[ -n $entry ]] || continue
+    hook=${entry#*$'\t'}
+    label=${hook:t}
+    [[ $entry == '*'$'\t'* ]] && label+=' (*)'
+    labels+=($label)
+  done
+
+  # Decide the project hook now, so the summary announces everything that
+  # will run before anything runs (and repo errors stop before user hooks).
+  _aliprehook_project_plan $key $cmd || return $?
+  [[ -n $_aliprehook_plan_hook ]] && labels+=("${_aliprehook_plan_hook:t} (project)")
+  _aliprehook_trace_plan $cmd $labels
+
   [[ -n ${hooks[1]} ]] || _aliprehook_trace_detail "  hooks.map: no hooks for $cmd here"
   for entry in $hooks; do
     [[ -n $entry ]] || continue
@@ -745,28 +783,30 @@ aliprehook_run() {
   # For the main command: user values win over project values.
   _aliprehook_env=("${(@kv)_aliprehook_env_project}" "${(@kv)_aliprehook_env_user}")
 
-  # aliprehook_define wrappers report once, right before the command runs.
-  [[ ${_aliprehook_trace_defer-} == "$cmd" ]] || _aliprehook_trace_summary $cmd
+  # aliprehook_define wrappers print the env line right before the command.
+  [[ ${_aliprehook_trace_defer-} == "$cmd" ]] || _aliprehook_trace_env_line $cmd
   return 0
 }
 
-# Project layer for aliprehook_run: git repos only, and only if allowed.
-_aliprehook_run_project() {
+# Plan the project layer for aliprehook_run: git repos only, and only if
+# allowed. Sets _aliprehook_plan_hook/_root/_rel, or _aliprehook_plan_why
+# when there is none. Returns 1 on a repo error (reported).
+_aliprehook_project_plan() {
   emulate -L zsh -o extended_glob
   local key=$1 cmd=$2 root rel hook
-  shift 2
+  _aliprehook_plan_hook= _aliprehook_plan_root= _aliprehook_plan_rel= _aliprehook_plan_why=
 
   root=$(command git rev-parse --show-toplevel 2>/dev/null)
   if [[ -z $root ]]; then
-    _aliprehook_trace_detail "  project hook: none (not a git repo)"
+    _aliprehook_plan_why="none (not a git repo)"
     return 0
   fi
   if [[ ! -f $root/.aliprehook.yml ]]; then
-    _aliprehook_trace_detail "  project hook: none (no .aliprehook.yml)"
+    _aliprehook_plan_why="none (no .aliprehook.yml)"
     return 0
   fi
   if ! aliprehook_is_allowed $key; then
-    _aliprehook_trace_detail "  project hook: skipped (repo not allowed; run: aliprehook allow)"
+    _aliprehook_plan_why="skipped (repo not allowed; run: aliprehook allow)"
     return 0
   fi
   _aliprehook_project_commands_warn $root
@@ -779,7 +819,7 @@ _aliprehook_run_project() {
     _aliprehook_msg warning "invalid entries ignored; fix " "@key=$root/.aliprehook.yml"
   fi
   if ! rel=$(aliprehook_project_lookup $root $cmd); then
-    _aliprehook_trace_detail "  project hook: none for $cmd in .aliprehook.yml"
+    _aliprehook_plan_why="none for $cmd in .aliprehook.yml"
     return 0
   fi
 
@@ -793,9 +833,21 @@ _aliprehook_run_project() {
     _aliprehook_msg error "project hook outside the repo: " "@key=$rel"
     return 1
   fi
-  _aliprehook_trace_detail "  project hook $rel"
-  ALIPREHOOK_PROJECT_ROOT=$root _aliprehook_exec project $key $cmd $hook "$@" || return $?
-  _aliprehook_trace_hooks+=("${hook:t} (project)")
+  _aliprehook_plan_hook=$hook _aliprehook_plan_root=$root _aliprehook_plan_rel=$rel
+}
+
+# Run the planned project hook (if any).
+_aliprehook_run_project() {
+  emulate -L zsh
+  local key=$1 cmd=$2
+  shift 2
+  if [[ -z $_aliprehook_plan_hook ]]; then
+    _aliprehook_trace_detail "  project hook: $_aliprehook_plan_why"
+    return 0
+  fi
+  _aliprehook_trace_detail "  project hook $_aliprehook_plan_rel"
+  ALIPREHOOK_PROJECT_ROOT=$_aliprehook_plan_root _aliprehook_exec project $key $cmd $_aliprehook_plan_hook "$@" || return $?
+  _aliprehook_trace_hooks+=("${_aliprehook_plan_hook:t} (project)")
   _aliprehook_trace_add_passed
 }
 
@@ -1735,9 +1787,10 @@ aliprehook_define() {
   # Calling the same name inside the wrapper would recurse.
   [[ $1 == $name ]] && set -- command "$@"
 
-  body="local _aliprehook_line _aliprehook_trace_defer=${(q)name}
+  body="local _aliprehook_line _aliprehook_trace_defer=${(q)name} _aliprehook_trace_cmdsrc=
   _aliprehook_line=\$(_aliprehook_command_lookup ${(q)name})
   (( \$? < 2 )) || return 1
+  [[ -n \$_aliprehook_line ]] && _aliprehook_trace_cmdsrc=commands.map:\${_aliprehook_line%%\$'\\t'*}
   aliprehook_run ${(q)name} \"\$@\" || return \$?
   _aliprehook_env_decl $keep; eval \"\$_aliprehook_env_code\"
   _aliprehook_trace_command ${(q)name} \"\$_aliprehook_line\" ${(q)${(j: :)${(q-)@}}} \"\$@\"

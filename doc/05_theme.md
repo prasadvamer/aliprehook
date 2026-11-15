@@ -25,7 +25,7 @@ Every color has **one meaning**. Purple marks aliprehook itself; status uses the
 | `key` | Where: project key or path | `github.com/org/sample_app_web` | Blue (robbyrussell `git:`) | `34` |
 | `var` | A variable name | `API_TOKEN` | Bold, default text color | `1` |
 | `hint` | Optional advice, how to fix | `(run: chmod +x …)` | Grey | `90` |
-| `trace` | What aliprehook did (run summary, [08_run-summary.md](./08_run-summary.md)) | `hooks: aws_login.sh · env: API_TOKEN` | Grey (same as `hint`) | `90` |
+| `trace` | What aliprehook did (run summary, [08_run-summary.md](./08_run-summary.md)) | `Dup → hooks: aws_login.sh` | Grey (same as `hint`) | `90` |
 
 Design rules:
 

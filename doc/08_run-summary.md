@@ -14,31 +14,40 @@ aliprehook works like a ghost. When you type `Dbuild`:
 
 When it works, that is invisible; when something is off (wrong project key, a hook not registered, a stale `commands.map` line), you have nothing to go on.
 
-## The summary line
+## The summary lines
 
-After the hooks and before the command, aliprehook prints **one line** to stderr, in a subdued color, **only if it did something**:
+At the `summary` level aliprehook prints up to two lines on stderr, in a subdued color, **only if it does something**:
 
 ```text
-aliprehook: Dbuild · hooks: all_Dbuild.sh (*), aws_login.sh · env: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN · command: commands.map:3
+aliprehook: Dbuild → hooks: all_Dbuild.sh (*), aws_login.sh, before_Dbuild.sh (project) · command: commands.map:3
+…hook output…
+aliprehook: Dbuild · env: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN (kept)
 ```
+
+**Line 1, before any hook runs** (`→` = about to run):
 
 | Part | Shown when | Says |
 |---|---|---|
-| `hooks:` | at least one hook ran | Hook file names in run order; `(*)` for `*` lines, `(project)` for the repo's `.aliprehook.yml` hook |
-| `env:` | at least one variable was passed | Variable **names** (never values); `(kept)` after names kept in the terminal by `--keep-env` |
-| `command:` | the command line came from `commands.map` | `commands.map:<line>`; nothing is shown for the `aliprehook_define` default |
+| `hooks:` | at least one hook will run | Hook file names in run order; `(*)` for `*` lines, `(project)` for the repo's `.aliprehook.yml` hook |
+| `command:` | the command line comes from `commands.map` | `commands.map:<line>`; nothing is shown for the `aliprehook_define` default |
 
-- **Nothing to report → no line.** A command with no hooks, no variables and the default command line prints nothing extra, so plain commands look exactly like before.
-- One line, no matter how many hooks: it never pushes your command's output away.
-- Hooks' own output is printed as before, above the summary.
-- Failures are unchanged: a failing hook or a missing required variable already prints an `error:` and the command does not run; no summary is printed then.
+**Line 2, after the hooks, right before the command** (`·` = done):
+
+| Part | Shown when | Says |
+|---|---|---|
+| `env:` | at least one variable was passed | Variable **names** (never values); `(kept)` after names kept in the terminal by `--keep-env` |
+
+- Everything in line 1 is known before anything runs: the `hooks.map` hooks, the project hook (repo allowed and has an entry; decided before the user hooks, so a repo error such as a hook outside the repo stops before any hook runs), and the `commands.map` line (wrappers look it up first). The hooks that run are exactly the ones announced. Only the passed variables are known afterwards, hence line 2.
+- **Nothing to report → no line.** A command with no hooks and the default command line prints nothing extra, so plain commands look exactly like before.
+- Hooks' own output appears between the two lines, under the line that announced them.
+- A failing hook or a missing required variable prints its `error:` after line 1 (which also shows where it stopped); line 2 is not printed and the command does not run.
 
 ## Levels: `ALIPREHOOK_VERBOSE`
 
 | Value | Prints |
 |---|---|
 | `quiet` | Nothing (errors and warnings still print) |
-| `summary` (default) | The one line above |
+| `summary` (default) | The lines above |
 | `detail` | One line per step, as it happens, then the full command line |
 
 `detail` example:
@@ -91,6 +100,6 @@ detail (from ~/.config/aliprehook/settings)
 ## Rules
 
 - Names only, never values: the same rule as every other aliprehook message.
-- The summary describes what happened in **this** run; it does not read files again or run anything extra (no slowdown beyond printing one line).
-- Hand-written (Case B) functions: `aliprehook_run` prints the `hooks:` / `env:` line when it finishes (it does not know the command yet); `aliprehook_command` adds a `command: commands.map:<line>` line when a line is used. In `detail`, `aliprehook_with_env` / `aliprehook_command` print the command line. `aliprehook_define` wrappers print everything in one line, right before the command.
+- The summary describes what happened in **this** run; it does not read files again or run anything extra (no slowdown beyond printing up to two lines).
+- Hand-written (Case B) functions: `aliprehook_run` prints line 1 without `command:` (it does not know the command) and line 2 when it finishes; `aliprehook_command` prints `<cmd> → command: commands.map:<line>` before running a `commands.map` line. In `detail`, `aliprehook_with_env` / `aliprehook_command` print the command line.
 - `aliprehook explain <cmd>` (Phase 8) stays the dry run: what *would* happen, without running anything. The summary is what *did* happen.

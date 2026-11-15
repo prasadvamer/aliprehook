@@ -373,7 +373,7 @@ aliprehook messages are colored with a purple theme. Each color has one meaning:
 | Blue | Where: project key or path | `github.com/org/sample_app_web` |
 | Bold | A variable name | `API_TOKEN` |
 | Grey | How to fix it | `(run: chmod +x …)` |
-| Grey | What aliprehook did (run summary, see 12.) | `Dup · hooks: aws_login.sh` |
+| Grey | What aliprehook does (run summary, see 12.) | `Dup → hooks: aws_login.sh` |
 
 `warning:` and `error:` are always written out, so the meaning never depends on color.
 
@@ -482,16 +482,18 @@ Design: [doc/07_cli-manage-hooks-and-commands.md](./doc/07_cli-manage-hooks-and-
 
 ## 12. See what aliprehook did
 
-Before your command runs, aliprehook prints one grey line on stderr saying what it did, **only if it did something**:
+aliprehook prints grey lines on stderr saying what it does, **only if it does something**: first what is about to run, then (after the hooks) which variables were passed:
 
 ```text
-aliprehook: Dbuild · hooks: all_Dbuild.sh (*), aws_login.sh · env: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN · command: commands.map:3
+aliprehook: Dbuild → hooks: all_Dbuild.sh (*), aws_login.sh · command: commands.map:3
+…hook output…
+aliprehook: Dbuild · env: AWS_ACCESS_KEY_ID, AWS_SESSION_TOKEN
 ```
 
-- `hooks:` the hooks that ran, in order: `(*)` for `*` lines, `(project)` for the repo's hook
-- `env:` names of the variables passed to the command (never values); `(kept)` for names kept in the shell by `--keep-env`
-- `command:` the `commands.map` line used (nothing for the `aliprehook_define` default)
-- No hooks, no variables, default command → no line. A failing hook prints its `error:` instead.
+- `→ hooks:` the hooks about to run, in order: `(*)` for `*` lines, `(project)` for the repo's hook
+- `→ command:` the `commands.map` line that will run (nothing for the `aliprehook_define` default)
+- `· env:` names of the variables passed to the command (never values); `(kept)` for names kept in the shell by `--keep-env`. Only when variables were passed.
+- No hooks, default command → no line. A failing hook prints its `error:` after the first line, and the command does not run.
 
 Choose how much you see:
 

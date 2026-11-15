@@ -48,6 +48,7 @@ Rules:
 - Every function starts with `emulate -L zsh` (add `-o extended_glob` when using `#`, `##`, `(#b)`). Exceptions: functions that `eval` a user's command line, which must run with the user's options.
 - **All output through `_aliprehook_msg [-n] [-1|-2] <level> <part>…`** (`info`, `success`, `warning`, `error`, `trace`); parts are text or `@role=text`. Never hard-code colors. Every failure says `error:`, every non-fatal problem `warning:`. Hints as `@hint=(run: …)`.
 - **Names, never values** of variables in any message.
+- **No ghost behaviour:** anything that changes what runs (a hook, a passed variable, a `commands.map` line, a skipped step) must show up in the run summary (`ALIPREHOOK_VERBOSE=summary`: what will run, announced before any hook runs; passed variables after the hooks) and in `detail` (one line per step, with the reason for skips), via `_aliprehook_trace` / `_aliprehook_trace_detail`. `quiet` prints nothing but warnings and errors. See `doc/08_run-summary.md`.
 - **Parse, never source** user or repo files (`hooks.map`, `commands.map`, `settings`, themes, `.aliprehook.yml`, env files).
 - **Writing user files:** `_aliprehook_write_lines` (temp file next to the target + `mv`, follows symlinks, keeps permissions, keeps comments and other lines). `commands.map` must never be group/world-writable.
 - **Security model:** shell code (`commands.map` lines) only from the user layer; repos (`.aliprehook.yml`) never define `*` hooks, commands, or protected env names (denylist); project hooks never see user-hook variables.

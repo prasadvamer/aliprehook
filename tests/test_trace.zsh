@@ -47,28 +47,30 @@ uhook a.sh 'aliprehook_env_pass TOKEN=s3cret-value MODE=dev'
 reg "*  D  hooks/common.sh" "$key  D  hooks/a.sh"
 run D x
 assert_eq "main x" "$out" "summary never on stdout"
-assert_eq "common-out
-aliprehook: D · hooks: common.sh (*), a.sh · env: TOKEN, MODE" "$err" "summary line after hook output"
+assert_eq "aliprehook: D → hooks: common.sh (*), a.sh
+common-out
+aliprehook: D · env: TOKEN, MODE" "$err" "line 1 before hook output, env line after"
 [[ $err != *s3cret* ]] || fail "value printed"
 
 # Same name from two hooks: listed once.
 uhook a2.sh 'aliprehook_env_pass TOKEN=other EXTRA=1'
 reg "$key  D  hooks/a.sh" "$key  D  hooks/a2.sh"
 run D
-assert_eq "aliprehook: D · hooks: a.sh, a2.sh · env: TOKEN, MODE, EXTRA" "$err" "env names once, in run order"
+assert_eq "aliprehook: D → hooks: a.sh, a2.sh
+aliprehook: D · env: TOKEN, MODE, EXTRA" "$err" "env names once, in run order"
 
 # Hooks only.
 reg "$key  D  hooks/common.sh"
 run D
-assert_eq "common-out
-aliprehook: D · hooks: common.sh" "$err" "hooks only"
+assert_eq "aliprehook: D → hooks: common.sh
+common-out" "$err" "hooks only: no env line"
 
 # --- command from commands.map ---
 reg
 cmds "# comment" "$key  D  print -r -- from-map"
 run D
 assert_eq "from-map" "$out" "map line runs"
-assert_eq "aliprehook: D · command: commands.map:2" "$err" "command part"
+assert_eq "aliprehook: D → command: commands.map:2" "$err" "command part"
 cd $plain; run D; cd $repo
 assert_eq "" "$err" "default command: no command part"
 rm $ALIPREHOOK_HOME/commands.map
@@ -84,7 +86,8 @@ uhook k.sh 'aliprehook_env_pass KV=1'
 reg "$key  K  hooks/k.sh"
 aliprehook_define --keep-env K print -r -- main
 run K
-assert_eq "aliprehook: K · hooks: k.sh, p.sh (project) · env: KV (kept), PV" "$err" "project marker and kept"
+assert_eq "aliprehook: K → hooks: k.sh, p.sh (project)
+aliprehook: K · env: KV (kept), PV" "$err" "project marker and kept"
 unset KV
 
 # --- no summary on failure ---
@@ -92,25 +95,52 @@ uhook fail.sh 'exit 3'
 reg "$key  D  hooks/a.sh" "$key  D  hooks/fail.sh"
 run D
 assert_eq 3 $rc "failing hook: exit code"
-[[ $err != *"D · hooks"* ]] || fail "summary printed on failure: '$err'"
+[[ $err == "aliprehook: D → hooks: a.sh, fail.sh"$'\n'*"D aborted: user hook exited 3"* ]] || fail "failure: line 1 then error: '$err'"
+[[ $err != *"D · env"* ]] || fail "env line printed on failure: '$err'"
 uhook req.sh 'aliprehook_env_pass --required NOPE'
 reg "$key  D  hooks/req.sh"
 run D
-[[ $err != *"D · hooks"* ]] || fail "summary printed on missing required: '$err'"
+[[ $err == "aliprehook: D → hooks: req.sh"$'\n'*"required variable missing: NOPE"* ]] || fail "missing required: line 1 then error: '$err'"
+[[ $err != *"D · env"* ]] || fail "env line printed on missing required: '$err'"
+
+# Hook-only command: announced before the hook, env line after.
+aliprehook_define H :
+uhook h.sh 'echo h-out >&2; aliprehook_env_pass HV=1'
+reg "$key  H  hooks/h.sh"
+run H
+assert_eq "aliprehook: H → hooks: h.sh
+h-out
+aliprehook: H · env: HV" "$err" "hook-only command order"
+
+# A repo error (project hook outside the repo) stops before any user hook runs.
+uhook mark.sh "touch $tmp/user-ran"
+reg "$key  Out  hooks/mark.sh"
+print -r -- "hooks:
+  Out: ../outside.sh" > $repo/.aliprehook.yml
+print -r -- $key > $ALIPREHOOK_HOME/allowed-repos
+aliprehook_define Out print -r -- main
+run Out
+assert_eq 1 $rc "repo error: exit 1"
+[[ $err == *"error: project hook outside the repo"* ]] || fail "repo error message: '$err'"
+[[ ! -e $tmp/user-ran ]] || fail "user hook ran before the repo error"
+print -r -- "hooks:
+  K: .aliprehook/p.sh" > $repo/.aliprehook.yml
 
 # --- Case B: aliprehook_run + aliprehook_with_env / aliprehook_command ---
 reg "$key  CB  hooks/a.sh"
 CB() { aliprehook_run CB "$@" || return $?; aliprehook_with_env print -r -- cb; }
 run CB
 assert_eq "cb" "$out" "Case B runs"
-assert_eq "aliprehook: CB · hooks: a.sh · env: TOKEN, MODE" "$err" "Case B: one summary line"
+assert_eq "aliprehook: CB → hooks: a.sh
+aliprehook: CB · env: TOKEN, MODE" "$err" "Case B: announce, then env"
 CC() { aliprehook_run CC "$@" || return $?; aliprehook_command CC print -r dflt -- "$@"; }
 reg "$key  CC  hooks/a.sh"
 cmds "$key  CC  print -r -- mapped"
 run CC
 assert_eq "mapped" "$out" "aliprehook_command line"
-assert_eq "aliprehook: CC · hooks: a.sh · env: TOKEN, MODE
-aliprehook: CC · command: commands.map:1" "$err" "aliprehook_command adds the command part"
+assert_eq "aliprehook: CC → hooks: a.sh
+aliprehook: CC · env: TOKEN, MODE
+aliprehook: CC → command: commands.map:1" "$err" "aliprehook_command announces the command line"
 rm $ALIPREHOOK_HOME/commands.map
 
 # --- quiet ---
@@ -156,20 +186,20 @@ ALIPREHOOK_VERBOSE=detail run CB
 # --- invalid level: warning once, summary used ---
 reg "$key  D  hooks/common.sh"
 ALIPREHOOK_VERBOSE=loud run D
-[[ $err == *"warning: invalid verbose level 'loud' in ALIPREHOOK_VERBOSE; using summary (levels: quiet, summary, detail)"*"D · hooks:"* ]] || fail "invalid level: '$err'"
+[[ $err == *"warning: invalid verbose level 'loud' in ALIPREHOOK_VERBOSE; using summary (levels: quiet, summary, detail)"*"D → hooks:"* ]] || fail "invalid level: '$err'"
 ALIPREHOOK_VERBOSE=loud run D
 [[ $err != *invalid* ]] || fail "invalid level warned twice"
 
 # --- trace color: theme role, themable ---
 ALIPREHOOK_COLOR=always run D
-[[ $err == *$'\e[90mD · hooks:'* ]] || fail "trace color 90: '$err'"
+[[ $err == *$'\e[90mD → hooks:'* ]] || fail "trace color 90: '$err'"
 print 'trace=35' > $ALIPREHOOK_HOME/theme-overrides
 _aliprehook_theme_key=
 ALIPREHOOK_COLOR=always run D
-[[ $err == *$'\e[35mD · hooks:'* ]] || fail "trace override: '$err'"
+[[ $err == *$'\e[35mD → hooks:'* ]] || fail "trace override: '$err'"
 rm $ALIPREHOOK_HOME/theme-overrides; _aliprehook_theme_key=
 ALIPREHOOK_THEME=none ALIPREHOOK_COLOR=always run D
-[[ $err == *"D · hooks:"* && $err != *$'\e[90m'* ]] || fail "theme none: '$err'"
+[[ $err == *"D → hooks:"* && $err != *$'\e[90m'* ]] || fail "theme none: '$err'"
 
 # --- aliprehook verbose ---
 reg
@@ -218,7 +248,7 @@ run aliprehook verbose --reset
 # Invalid level in settings: warning, summary used.
 print 'verbose=chatty' > $S
 run D
-[[ $err == *"invalid verbose level 'chatty' in $S"*"D · hooks: common.sh" ]] || fail "invalid settings level: '$err'"
+[[ $err == *"invalid verbose level 'chatty' in $S"*"D → hooks: common.sh"* ]] || fail "invalid settings level: '$err'"
 
 # Usage errors.
 for call in 'verbose loud' 'verbose detail quiet' 'verbose --reset detail' 'verbose --shell' 'verbose --bogus'; do

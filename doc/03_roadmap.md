@@ -172,6 +172,11 @@ Ideas that came up while using aliprehook. Implement only when picked.
   - New theme role `trace` (default `90`, like `hint`) in `purple.theme` / `none.theme`; same color rules as other messages
   - Same summary from Case B helpers (`aliprehook_with_env`, `aliprehook_command`)
   - README section; tests: no line when nothing happened, each part shown alone and combined, values never printed, `quiet` silent, `detail` order and skip reasons, no line on failure, stderr only, `trace` role themable; `aliprehook verbose` show / save / `--shell` / `--reset`, precedence, hidden-setting warning, other shell sees a save, bad value → exit 2
+- [x] Run summary: announce before, confirm after ([08_run-summary.md](./08_run-summary.md) § The summary lines)
+  - Line 1 before any hook runs (`→`): planned `hooks:` (user + project) and `command:` (wrappers; `aliprehook_command` in Case B); none if nothing will run
+  - Line 2 before the command (`·`): `env:` only if variables were passed; not printed when a hook fails
+  - Project hook decided (allowed + entry) before user hooks run, so line 1 is complete; hooks that run = hooks announced
+  - Tests: line 1 precedes hook output; line 2 only with variables; failure → line 1 + error, no line 2; hook-only (`:`) command; Case B order; `detail` unchanged
 
 **Done when:** no open friction notes that block daily use, and `explain` answers "why did / didn't my hook run?".
 
