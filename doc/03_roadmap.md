@@ -172,6 +172,15 @@ Ideas that came up while using aliprehook. Implement only when picked.
   - New theme role `trace` (default `90`, like `hint`) in `purple.theme` / `none.theme`; same color rules as other messages
   - Same summary from Case B helpers (`aliprehook_with_env`, `aliprehook_command`)
   - README section; tests: no line when nothing happened, each part shown alone and combined, values never printed, `quiet` silent, `detail` order and skip reasons, no line on failure, stderr only, `trace` role themable; `aliprehook verbose` show / save / `--shell` / `--reset`, precedence, hidden-setting warning, other shell sees a save, bad value → exit 2
+- [ ] Wrap real commands ([09_wrap-real-commands.md](./09_wrap-real-commands.md))
+  - `aliprehook_wrap [--keep-env] <cmd>`: same as `aliprehook_define <cmd> <cmd>`; error if `<cmd>` is not an installed program
+  - Subcommand keys `cmd:word:word` in `hooks.map`, `commands.map`, the CLI and (quoted) `.aliprehook.yml`; match when the positional words (options skipped) start with those words
+  - `aliprehook_wrap --value-opts '<options>'`: options that take the next word as value; `--opt=value`, `-fvalue`, `--`, lone `-` handled; no built-in option lists
+  - Hooks: every matching key runs; `*` lines first, then the project's; general → specific within each; `ALIPREHOOK_MATCH` set to the matched key
+  - Commands: most specific matching line wins; exact prefix → matched words replaced, rest appended (or `"$@"`); options skipped → line used only if it places `"$@"` (arguments minus matched words), else next less specific line or the real command, reason in `detail`; the wrapped name inside the line is the real command (no loop)
+  - Fast path: no `hooks.map` / `commands.map` line for the command and no `.aliprehook.yml` up the path → run the real command without computing the key
+  - Run summary and `detail` show the matched path and keys; README section
+  - Tests: wrap of a missing program fails; `docker ps` vs `docker compose up` matching; option before subcommand matches with `--value-opts`, misses without it (never a wrong match); `--opt=value`, `--`, `run web up` no false match; options-skipped `commands.map` line with and without `"$@"`; hook order across levels and layers; most specific command line, rest appended; no recursion in a `docker:…` line; `ALIPREHOOK_MATCH`; quoted yml key; fast path makes no git call; existing plain-name behaviour unchanged
 - [x] Run summary: announce before, confirm after ([08_run-summary.md](./08_run-summary.md) § The summary lines)
   - Line 1 before any hook runs (`→`): planned `hooks:` (user + project) and `command:` (wrappers; `aliprehook_command` in Case B); none if nothing will run
   - Line 2 before the command (`·`): `env:` only if variables were passed; not printed when a hook fails

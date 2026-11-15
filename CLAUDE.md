@@ -4,7 +4,13 @@ A zsh tool that runs optional prehooks (and per-project command lines) for opt-i
 
 ## Workflow
 
-- **Design first, implement only when asked.** New ideas go into the right design doc and `doc/03_roadmap.md` (Phase 8, "Improvements from dogfooding"). Do not touch code until the user says to implement.
+Three separate steps, each only on the user's word:
+
+1. **Discuss.** Questions, ideas and "is it possible…?" get an answer in chat: how it works today, options, trade-offs, a recommendation. **No file changes** while discussing, not even docs.
+2. **Document**, only when the user confirms (e.g. "add it", "add to the doc/roadmap"): write the agreed design into the right design doc and `doc/03_roadmap.md` (Phase 8, "Improvements from dogfooding"), marked planned. Ending a discussion with "should I add this to the docs?" is fine; adding it without a yes is not.
+3. **Implement**, only when the user says so (e.g. "implement it"). Do not touch code before that.
+
+- Answering a question may require reading or searching the repo; that is fine. Editing is not.
 - When implementing: code + tests + README + design doc status ("implemented") + roadmap checkboxes, in the same change.
 - If the implementation deviates from the doc (a better or necessary choice), update the doc and say so.
 - The user stages files and asks for commits. Commit only what is staged; message describes the code change only.
